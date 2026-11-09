@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- 白色 K 字主干 -->
+    <path
+        android:pathData="M38,31 L38,77"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="9"
+        android:strokeLineCap="round" />
+    <!-- 白色 K 字下撇，构成稳健的支点 -->
+    <path
+        android:pathData="M44,54 L69,79"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="9"
+        android:strokeLineCap="round" />
+    <!-- 金色上扬箭头，作为 K 字上撇，寓意增长 -->
+    <path
+        android:pathData="M43,54 L65,32"
+        android:strokeColor="#FFF2C14E"
+        android:strokeWidth="9"
+        android:strokeLineCap="round" />
+    <path
+        android:pathData="M55,32 L65,32 L65,42"
+        android:strokeColor="#FFF2C14E"
+        android:strokeWidth="9"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+</vector>
