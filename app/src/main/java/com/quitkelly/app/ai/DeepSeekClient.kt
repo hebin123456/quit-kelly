@@ -48,27 +48,39 @@ class DeepSeekClient(baseClient: OkHttpClient) {
         model: String,
         messages: List<AiMessage>,
         temperature: Double? = 0.7,
-        maxTokens: Int? = null
+        maxTokens: Int? = null,
+        disableThinking: Boolean = false
     ): String = withContext(Dispatchers.IO) {
         val request = buildRequest(
             apiKey = apiKey,
-            payload = buildPayload(model, messages, stream = false, temperature = temperature, maxTokens = maxTokens)
+            payload = buildPayload(
+                model = model,
+                messages = messages,
+                stream = false,
+                temperature = temperature,
+                maxTokens = maxTokens,
+                disableThinking = disableThinking
+            )
         )
         client.newCall(request).execute().use { response ->
             val body = response.body?.string().orEmpty()
             if (!response.isSuccessful) {
                 throw ApiException(friendlyError(response.code, body))
             }
-            val content = runCatching {
-                json.parseToJsonElement(body)
-                    .jsonObject["choices"]?.jsonArray
-                    ?.firstOrNull()?.jsonObject
-                    ?.get("message")?.jsonObject
-                    ?.get("content")?.jsonPrimitive?.contentOrNull
+            val choice = runCatching {
+                json.parseToJsonElement(body).jsonObject["choices"]?.jsonArray?.firstOrNull()?.jsonObject
             }.getOrNull()
-            val result = content?.trim()
-            if (result.isNullOrBlank()) throw ApiException("模型返回了空内容")
-            result
+            val message = choice?.get("message")?.jsonObject
+            val content = message?.get("content")?.jsonPrimitive?.contentOrNull?.trim()
+            if (content.isNullOrBlank()) {
+                val reasoning = message?.get("reasoning_content")?.jsonPrimitive?.contentOrNull
+                val finishReason = choice?.get("finish_reason")?.jsonPrimitive?.contentOrNull
+                if (!reasoning.isNullOrBlank()) {
+                    throw ApiException("模型只返回了思考内容（finish_reason=$finishReason），请增大 max_tokens")
+                }
+                throw ApiException("模型返回了空内容（finish_reason=$finishReason）")
+            }
+            content
         }
     }
 
@@ -118,7 +130,8 @@ class DeepSeekClient(baseClient: OkHttpClient) {
         messages: List<AiMessage>,
         stream: Boolean,
         temperature: Double?,
-        maxTokens: Int?
+        maxTokens: Int?,
+        disableThinking: Boolean = false
     ): String {
         return buildJsonObject {
             put("model", model)
@@ -149,6 +162,9 @@ class DeepSeekClient(baseClient: OkHttpClient) {
                 }
             })
             put("stream", stream)
+            if (disableThinking) {
+                put("thinking", buildJsonObject { put("type", "disabled") })
+            }
             temperature?.let { put("temperature", it) }
             maxTokens?.let { put("max_tokens", it) }
         }.toString()

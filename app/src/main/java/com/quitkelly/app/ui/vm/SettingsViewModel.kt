@@ -71,7 +71,8 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
                     model = _state.value.settings.model,
                     messages = listOf(AiMessage("user", "只回复四个字：连接成功")),
                     temperature = 0.0,
-                    maxTokens = 20
+                    maxTokens = 64,
+                    disableThinking = true
                 )
             }
             _state.update {
