@@ -1,5 +1,6 @@
 package com.quitkelly.app.ui.vm
 
+import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
@@ -8,7 +9,9 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import com.quitkelly.app.AppContainer
 import com.quitkelly.app.ai.AiMessage
 import com.quitkelly.app.ai.Prompts
+import com.quitkelly.app.data.AttachmentStore
 import com.quitkelly.app.data.ChatMessageEntity
+import com.quitkelly.app.data.PendingAttachment
 import java.time.LocalDate
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -22,7 +25,9 @@ data class ChatUiState(
     val streamingText: String = "",
     val isStreaming: Boolean = false,
     val error: String? = null,
-    val hasApiKey: Boolean = true
+    val hasApiKey: Boolean = true,
+    val pendingAttachments: List<PendingAttachment> = emptyList(),
+    val importingAttachment: Boolean = false
 )
 
 class ChatViewModel(private val container: AppContainer) : ViewModel() {
@@ -45,9 +50,72 @@ class ChatViewModel(private val container: AppContainer) : ViewModel() {
         _state.update { it.copy(hasApiKey = container.secretStore.apiKey().isNotBlank()) }
     }
 
+    fun addImages(uris: List<Uri>) {
+        if (uris.isEmpty() || _state.value.importingAttachment) return
+        val remaining = AttachmentStore.MAX_ATTACHMENTS - _state.value.pendingAttachments.size
+        if (remaining <= 0) {
+            _state.update {
+                it.copy(error = "每条消息最多添加 ${AttachmentStore.MAX_ATTACHMENTS} 个附件")
+            }
+            return
+        }
+        viewModelScope.launch {
+            _state.update { it.copy(importingAttachment = true, error = null) }
+            val results = container.attachmentStore.importImages(uris.take(remaining))
+            val imported = results.mapNotNull { it.getOrNull() }
+            val failure = results.firstNotNullOfOrNull { it.exceptionOrNull()?.message }
+            _state.update {
+                it.copy(
+                    pendingAttachments = it.pendingAttachments + imported,
+                    importingAttachment = false,
+                    error = failure ?: if (uris.size > remaining) {
+                        "最多添加 ${AttachmentStore.MAX_ATTACHMENTS} 个附件，多余的已忽略"
+                    } else {
+                        null
+                    }
+                )
+            }
+        }
+    }
+
+    fun addFile(uri: Uri) {
+        if (_state.value.importingAttachment) return
+        if (_state.value.pendingAttachments.size >= AttachmentStore.MAX_ATTACHMENTS) {
+            _state.update {
+                it.copy(error = "每条消息最多添加 ${AttachmentStore.MAX_ATTACHMENTS} 个附件")
+            }
+            return
+        }
+        viewModelScope.launch {
+            _state.update { it.copy(importingAttachment = true, error = null) }
+            val result = container.attachmentStore.importFile(uri)
+            val imported = result.getOrNull()
+            val failure = result.exceptionOrNull()
+            _state.update { current ->
+                current.copy(
+                    pendingAttachments = if (imported != null) {
+                        current.pendingAttachments + imported
+                    } else {
+                        current.pendingAttachments
+                    },
+                    importingAttachment = false,
+                    error = failure?.message
+                )
+            }
+        }
+    }
+
+    fun removeAttachment(id: String) {
+        _state.update { current ->
+            current.copy(pendingAttachments = current.pendingAttachments.filterNot { it.id == id })
+        }
+    }
+
     fun send(input: String) {
         val text = input.trim()
-        if (text.isEmpty() || _state.value.isStreaming) return
+        val pending = _state.value.pendingAttachments
+        if ((text.isEmpty() && pending.isEmpty()) || _state.value.isStreaming) return
+        if (_state.value.importingAttachment) return
 
         val apiKey = container.secretStore.apiKey()
         if (apiKey.isBlank()) {
@@ -63,19 +131,51 @@ class ChatViewModel(private val container: AppContainer) : ViewModel() {
             }
             try {
                 val dao = container.database.chatDao()
+                val history = dao.recent(20).sortedBy { it.createdAt }
+                val attachmentsJson = container.attachmentStore.toJson(pending)
                 dao.insert(
                     ChatMessageEntity(
                         role = "user",
                         content = text,
-                        createdAt = System.currentTimeMillis()
+                        createdAt = System.currentTimeMillis(),
+                        attachmentsJson = attachmentsJson
                     )
                 )
+                _state.update { it.copy(pendingAttachments = emptyList()) }
+
                 val settings = container.settings.snapshot()
                 val digest = container.database.digestDao().byDate(LocalDate.now().toString())
-                val history = dao.recent(20).sortedBy { it.createdAt }
+                val imageUrls = container.attachmentStore.buildImageDataUrls(pending)
+                val attachmentText = container.attachmentStore.buildTextContext(pending)
+
+                val promptText = buildString {
+                    if (text.isNotBlank()) append(text)
+                    if (attachmentText.isNotBlank()) {
+                        if (isNotEmpty()) appendLine().appendLine()
+                        append(attachmentText.trim())
+                    }
+                    if (isEmpty()) append("请分析我发送的附件。")
+                }
+
                 val messages = buildList {
                     add(AiMessage("system", Prompts.chatSystem(LocalDate.now().toString(), digest?.content)))
-                    history.forEach { add(AiMessage(it.role, it.content)) }
+                    history.forEach { message ->
+                        val attachments = container.attachmentStore.fromJson(message.attachmentsJson)
+                        val content = if (attachments.isEmpty()) {
+                            message.content
+                        } else {
+                            buildString {
+                                if (message.content.isNotBlank()) {
+                                    append(message.content).appendLine().appendLine()
+                                }
+                                append("【已发送附件：")
+                                append(attachments.joinToString("、") { it.name })
+                                append("】")
+                            }
+                        }
+                        add(AiMessage(message.role, content))
+                    }
+                    add(AiMessage("user", promptText, imageUrls))
                 }
 
                 val builder = StringBuilder()
@@ -110,7 +210,7 @@ class ChatViewModel(private val container: AppContainer) : ViewModel() {
         if (_state.value.isStreaming) return
         viewModelScope.launch {
             container.database.chatDao().clear()
-            _state.update { it.copy(error = null) }
+            _state.update { it.copy(error = null, pendingAttachments = emptyList()) }
         }
     }
 

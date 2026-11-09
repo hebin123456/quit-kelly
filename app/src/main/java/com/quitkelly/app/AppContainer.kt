@@ -3,6 +3,7 @@ package com.quitkelly.app
 import android.content.Context
 import com.quitkelly.app.ai.DeepSeekClient
 import com.quitkelly.app.data.AppDatabase
+import com.quitkelly.app.data.AttachmentStore
 import com.quitkelly.app.data.NewsRepository
 import com.quitkelly.app.data.SecretStore
 import com.quitkelly.app.data.SettingsRepository
@@ -19,6 +20,8 @@ class AppContainer(context: Context) {
     val settings = SettingsRepository(appContext)
 
     val secretStore = SecretStore(appContext)
+
+    val attachmentStore = AttachmentStore(appContext)
 
     val httpClient: OkHttpClient = OkHttpClient.Builder()
         .connectTimeout(20, TimeUnit.SECONDS)

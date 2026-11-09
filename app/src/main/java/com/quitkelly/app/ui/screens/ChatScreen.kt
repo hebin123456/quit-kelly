@@ -1,5 +1,9 @@
 package com.quitkelly.app.ui.screens
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -23,11 +27,14 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -39,24 +46,37 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.quitkelly.app.KellyApp
+import com.quitkelly.app.R
+import com.quitkelly.app.data.ChatAttachment
 import com.quitkelly.app.data.ChatMessageEntity
+import com.quitkelly.app.data.PendingAttachment
 import com.quitkelly.app.ui.components.KellyAvatar
 import com.quitkelly.app.ui.components.KellyTopBar
 import com.quitkelly.app.ui.components.MarkdownText
 import com.quitkelly.app.ui.components.MessageBanner
 import com.quitkelly.app.ui.vm.ChatViewModel
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 @Composable
 fun ChatScreen(onOpenSettings: () -> Unit) {
@@ -64,6 +84,17 @@ fun ChatScreen(onOpenSettings: () -> Unit) {
     val app = context.applicationContext as? KellyApp ?: return
     val viewModel: ChatViewModel = viewModel(factory = ChatViewModel.factory(app.container))
     val state by viewModel.state.collectAsStateWithLifecycle()
+
+    val imagePicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.PickMultipleVisualMedia(4)
+    ) { uris ->
+        if (uris.isNotEmpty()) viewModel.addImages(uris)
+    }
+    val filePicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) viewModel.addFile(uri)
+    }
 
     val listState = rememberLazyListState()
     var input by rememberSaveable { mutableStateOf("") }
@@ -87,7 +118,7 @@ fun ChatScreen(onOpenSettings: () -> Unit) {
     Column(modifier = Modifier.fillMaxSize()) {
         KellyTopBar(
             title = "凯小丽",
-            subtitle = "财经专家智能体 · DeepSeek",
+            subtitle = "财经专家智能体 · 支持图片与文件",
             actions = {
                 IconButton(
                     onClick = viewModel::clearChat,
@@ -122,7 +153,10 @@ fun ChatScreen(onOpenSettings: () -> Unit) {
                 item { WelcomeCard() }
             }
             items(state.messages, key = { it.id }) { message ->
-                MessageRow(message)
+                val attachments = remember(message.attachmentsJson) {
+                    app.container.attachmentStore.fromJson(message.attachmentsJson)
+                }
+                MessageRow(message = message, attachments = attachments)
             }
             if (state.isStreaming) {
                 item { StreamingRow(state.streamingText) }
@@ -143,12 +177,22 @@ fun ChatScreen(onOpenSettings: () -> Unit) {
         ChatInput(
             value = input,
             enabled = !state.isStreaming,
+            pending = state.pendingAttachments,
+            importing = state.importingAttachment,
+            canSend = input.isNotBlank() || state.pendingAttachments.isNotEmpty(),
             onChange = { input = it },
             onSend = {
                 val text = input
                 input = ""
                 viewModel.send(text)
-            }
+            },
+            onPickImage = {
+                imagePicker.launch(
+                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                )
+            },
+            onPickFile = { filePicker.launch(arrayOf("*/*")) },
+            onRemoveAttachment = viewModel::removeAttachment
         )
     }
 }
@@ -179,7 +223,7 @@ private fun WelcomeCard() {
             }
             Spacer(Modifier.height(12.dp))
             Text(
-                text = "我可以结合今天的财经日报，帮你梳理市场主线、解读政策与行业影响。试试下面的问题，或者直接输入你的疑问。",
+                text = "我可以结合今天的财经日报，帮你梳理市场主线、解读政策与行业影响。也可以直接发我截图、PDF 或数据文件，让我帮你读图表、提取要点、做分析。",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -188,7 +232,7 @@ private fun WelcomeCard() {
 }
 
 @Composable
-private fun MessageRow(message: ChatMessageEntity) {
+private fun MessageRow(message: ChatMessageEntity, attachments: List<ChatAttachment>) {
     val isUser = message.role == "user"
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -219,14 +263,81 @@ private fun MessageRow(message: ChatMessageEntity) {
             modifier = Modifier.widthIn(max = 330.dp)
         ) {
             Column(Modifier.padding(12.dp)) {
-                if (isUser) {
-                    Text(
-                        text = message.content,
-                        style = MaterialTheme.typography.bodyMedium
-                    )
-                } else {
-                    MarkdownText(message.content)
+                if (message.content.isNotBlank()) {
+                    if (isUser) {
+                        Text(
+                            text = message.content,
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                    } else {
+                        MarkdownText(message.content)
+                    }
                 }
+                if (attachments.isNotEmpty()) {
+                    if (message.content.isNotBlank()) Spacer(Modifier.height(8.dp))
+                    attachments.forEachIndexed { index, attachment ->
+                        if (index > 0) Spacer(Modifier.height(6.dp))
+                        AttachmentItem(attachment = attachment, isUser = isUser)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AttachmentItem(attachment: ChatAttachment, isUser: Boolean) {
+    if (attachment.kind == "image") {
+        AttachmentImage(
+            path = attachment.path,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(150.dp)
+                .clip(RoundedCornerShape(10.dp))
+        )
+    } else {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(10.dp))
+                .background(
+                    if (isUser) {
+                        Color.White.copy(alpha = 0.16f)
+                    } else {
+                        MaterialTheme.colorScheme.surfaceVariant
+                    }
+                )
+                .padding(horizontal = 10.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                painter = painterResource(R.drawable.ic_file),
+                contentDescription = null,
+                tint = if (isUser) Color.White else MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(18.dp)
+            )
+            Spacer(Modifier.width(8.dp))
+            Column(Modifier.weight(1f)) {
+                Text(
+                    text = attachment.name,
+                    style = MaterialTheme.typography.bodySmall,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    color = if (isUser) Color.White else MaterialTheme.colorScheme.onSurface
+                )
+                Text(
+                    text = if (attachment.kind == "pdf") {
+                        "PDF · ${attachment.pageCount} 页"
+                    } else {
+                        "文本文件"
+                    },
+                    style = MaterialTheme.typography.labelSmall,
+                    color = if (isUser) {
+                        Color(0xCCFFFFFF)
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    }
+                )
             }
         }
     }
@@ -290,47 +401,207 @@ private fun QuickPrompts(onPick: (String) -> Unit) {
 }
 
 @Composable
+private fun PendingAttachmentsRow(
+    attachments: List<PendingAttachment>,
+    importing: Boolean,
+    onRemove: (String) -> Unit
+) {
+    LazyRow(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        items(attachments, key = { it.id }) { attachment ->
+            Box(modifier = Modifier.size(76.dp)) {
+                if (attachment.kind == "image") {
+                    AttachmentImage(
+                        path = attachment.path,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .clip(RoundedCornerShape(10.dp))
+                    )
+                } else {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(MaterialTheme.colorScheme.surfaceVariant)
+                            .padding(6.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
+                    ) {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_file),
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(Modifier.height(3.dp))
+                        Text(
+                            text = attachment.name,
+                            style = MaterialTheme.typography.labelSmall,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+                IconButton(
+                    onClick = { onRemove(attachment.id) },
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .size(20.dp)
+                        .background(Color.Black.copy(alpha = 0.55f), CircleShape)
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.Close,
+                        contentDescription = "移除附件",
+                        tint = Color.White,
+                        modifier = Modifier.size(13.dp)
+                    )
+                }
+            }
+        }
+        if (importing) {
+            item {
+                Box(
+                    modifier = Modifier.size(76.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(20.dp),
+                        strokeWidth = 2.dp
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun ChatInput(
     value: String,
     enabled: Boolean,
+    pending: List<PendingAttachment>,
+    importing: Boolean,
+    canSend: Boolean,
     onChange: (String) -> Unit,
-    onSend: () -> Unit
+    onSend: () -> Unit,
+    onPickImage: () -> Unit,
+    onPickFile: () -> Unit,
+    onRemoveAttachment: (String) -> Unit
 ) {
+    var menuExpanded by remember { mutableStateOf(false) }
+
     Surface(
         color = MaterialTheme.colorScheme.surface,
         tonalElevation = 2.dp
     ) {
-        Row(
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .imePadding()
-                .padding(horizontal = 12.dp, vertical = 10.dp),
-            verticalAlignment = Alignment.Bottom
         ) {
-            OutlinedTextField(
-                value = value,
-                onValueChange = onChange,
-                modifier = Modifier.weight(1f),
-                placeholder = { Text("问问凯小丽…") },
-                maxLines = 4,
-                shape = RoundedCornerShape(22.dp),
-                enabled = enabled
-            )
-            Spacer(Modifier.width(8.dp))
-            IconButton(
-                onClick = onSend,
-                enabled = enabled && value.isNotBlank(),
-                modifier = Modifier
-                    .size(48.dp)
-                    .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.primary)
-            ) {
-                Icon(
-                    imageVector = Icons.AutoMirrored.Filled.Send,
-                    contentDescription = "发送",
-                    tint = MaterialTheme.colorScheme.onPrimary
+            if (pending.isNotEmpty() || importing) {
+                Spacer(Modifier.height(8.dp))
+                PendingAttachmentsRow(
+                    attachments = pending,
+                    importing = importing,
+                    onRemove = onRemoveAttachment
                 )
             }
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 8.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.Bottom
+            ) {
+                Box {
+                    IconButton(
+                        onClick = { menuExpanded = true },
+                        enabled = enabled && !importing
+                    ) {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_attach),
+                            contentDescription = "添加附件",
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                    DropdownMenu(
+                        expanded = menuExpanded,
+                        onDismissRequest = { menuExpanded = false }
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text("发送图片") },
+                            onClick = {
+                                menuExpanded = false
+                                onPickImage()
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("发送文件（PDF / txt / csv 等）") },
+                            onClick = {
+                                menuExpanded = false
+                                onPickFile()
+                            }
+                        )
+                    }
+                }
+                OutlinedTextField(
+                    value = value,
+                    onValueChange = onChange,
+                    modifier = Modifier.weight(1f),
+                    placeholder = { Text("问问凯小丽，或添加图片/文件…") },
+                    maxLines = 4,
+                    shape = RoundedCornerShape(22.dp),
+                    enabled = enabled
+                )
+                Spacer(Modifier.width(8.dp))
+                IconButton(
+                    onClick = onSend,
+                    enabled = enabled && canSend,
+                    modifier = Modifier
+                        .size(48.dp)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.primary)
+                ) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.Send,
+                        contentDescription = "发送",
+                        tint = MaterialTheme.colorScheme.onPrimary
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AttachmentImage(path: String, modifier: Modifier = Modifier) {
+    val app = LocalContext.current.applicationContext as? KellyApp
+    val bitmap by produceState<ImageBitmap?>(null, path) {
+        value = withContext(Dispatchers.IO) {
+            app?.container?.attachmentStore?.loadThumbnail(path, 720)?.asImageBitmap()
+        }
+    }
+    val image = bitmap
+    if (image != null) {
+        Image(
+            bitmap = image,
+            contentDescription = null,
+            modifier = modifier,
+            contentScale = ContentScale.Crop
+        )
+    } else {
+        Box(
+            modifier = modifier.background(MaterialTheme.colorScheme.surfaceVariant),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                painter = painterResource(R.drawable.ic_file),
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
     }
 }

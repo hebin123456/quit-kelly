@@ -22,7 +22,8 @@ import okhttp3.RequestBody.Companion.toRequestBody
 
 data class AiMessage(
     val role: String,
-    val content: String
+    val content: String,
+    val images: List<String> = emptyList()
 )
 
 class ApiException(message: String) : Exception(message)
@@ -125,7 +126,25 @@ class DeepSeekClient(baseClient: OkHttpClient) {
                 messages.forEach { message ->
                     add(buildJsonObject {
                         put("role", message.role)
-                        put("content", message.content)
+                        if (message.images.isEmpty()) {
+                            put("content", message.content)
+                        } else {
+                            put("content", buildJsonArray {
+                                add(buildJsonObject {
+                                    put("type", "text")
+                                    put("text", message.content)
+                                })
+                                message.images.forEach { dataUrl ->
+                                    add(buildJsonObject {
+                                        put("type", "image_url")
+                                        put("image_url", buildJsonObject {
+                                            put("url", dataUrl)
+                                            put("detail", "auto")
+                                        })
+                                    })
+                                }
+                            })
+                        }
                     })
                 }
             })
