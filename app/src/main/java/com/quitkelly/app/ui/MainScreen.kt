@@ -1,5 +1,8 @@
 package com.quitkelly.app.ui
 
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Home
@@ -12,16 +15,18 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.navigation.NavGraph.Companion.findStartDestination
-import androidx.navigation.compose.NavHost
-import androidx.navigation.compose.composable
-import androidx.navigation.compose.currentBackStackEntryAsState
-import androidx.navigation.compose.rememberNavController
 import com.quitkelly.app.ui.screens.ChatScreen
 import com.quitkelly.app.ui.screens.DailyScreen
 import com.quitkelly.app.ui.screens.SettingsScreen
+
+private const val ROUTE_DAILY = "daily"
+private const val ROUTE_CHAT = "chat"
+private const val ROUTE_SETTINGS = "settings"
 
 private data class Destination(
     val route: String,
@@ -30,16 +35,18 @@ private data class Destination(
 )
 
 private val destinations = listOf(
-    Destination("daily", "日报", Icons.Filled.Home),
-    Destination("chat", "专家", Icons.Filled.Person),
-    Destination("settings", "设置", Icons.Filled.Settings)
+    Destination(ROUTE_DAILY, "日报", Icons.Filled.Home),
+    Destination(ROUTE_CHAT, "专家", Icons.Filled.Person),
+    Destination(ROUTE_SETTINGS, "设置", Icons.Filled.Settings)
 )
 
 @Composable
 fun MainScreen() {
-    val navController = rememberNavController()
-    val backStackEntry by navController.currentBackStackEntryAsState()
-    val currentRoute = backStackEntry?.destination?.route
+    var currentRoute by rememberSaveable { mutableStateOf(ROUTE_DAILY) }
+
+    BackHandler(enabled = currentRoute != ROUTE_DAILY) {
+        currentRoute = ROUTE_DAILY
+    }
 
     Scaffold(
         bottomBar = {
@@ -47,15 +54,7 @@ fun MainScreen() {
                 destinations.forEach { destination ->
                     NavigationBarItem(
                         selected = currentRoute == destination.route,
-                        onClick = {
-                            navController.navigate(destination.route) {
-                                popUpTo(navController.graph.findStartDestination().id) {
-                                    saveState = true
-                                }
-                                launchSingleTop = true
-                                restoreState = true
-                            }
-                        },
+                        onClick = { currentRoute = destination.route },
                         icon = {
                             Icon(
                                 imageVector = destination.icon,
@@ -68,23 +67,21 @@ fun MainScreen() {
             }
         }
     ) { innerPadding ->
-        NavHost(
-            navController = navController,
-            startDestination = "daily",
-            modifier = Modifier.padding(innerPadding)
+        Box(
+            modifier = Modifier
+                .padding(innerPadding)
+                .fillMaxSize()
         ) {
-            composable("daily") {
-                DailyScreen(
-                    onOpenSettings = { navController.navigate("settings") }
+            when (currentRoute) {
+                ROUTE_CHAT -> ChatScreen(
+                    onOpenSettings = { currentRoute = ROUTE_SETTINGS }
                 )
-            }
-            composable("chat") {
-                ChatScreen(
-                    onOpenSettings = { navController.navigate("settings") }
+
+                ROUTE_SETTINGS -> SettingsScreen()
+
+                else -> DailyScreen(
+                    onOpenSettings = { currentRoute = ROUTE_SETTINGS }
                 )
-            }
-            composable("settings") {
-                SettingsScreen()
             }
         }
     }

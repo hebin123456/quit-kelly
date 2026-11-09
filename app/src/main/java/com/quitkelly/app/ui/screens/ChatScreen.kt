@@ -73,6 +73,10 @@ fun ChatScreen(onOpenSettings: () -> Unit) {
         onPauseOrDispose { }
     }
 
+    LaunchedEffect(Unit) {
+        viewModel.refreshKeyState()
+    }
+
     val itemCount = state.messages.size + (if (state.isStreaming) 1 else 0)
     LaunchedEffect(itemCount, state.streamingText.length) {
         if (itemCount > 0) {
