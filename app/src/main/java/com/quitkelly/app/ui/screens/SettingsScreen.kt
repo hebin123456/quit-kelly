@@ -21,7 +21,6 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -88,8 +87,7 @@ fun SettingsScreen() {
                         onKeyChange = { keyInput = it },
                         onToggleVisible = { keyVisible = !keyVisible },
                         onSave = { viewModel.saveApiKey(keyInput) },
-                        onTest = viewModel::testConnection,
-                        onModelChange = viewModel::setModel
+                        onTest = viewModel::testConnection
                     )
                 }
                 item {
@@ -159,8 +157,7 @@ private fun ApiSection(
     onKeyChange: (String) -> Unit,
     onToggleVisible: () -> Unit,
     onSave: () -> Unit,
-    onTest: () -> Unit,
-    onModelChange: (String) -> Unit
+    onTest: () -> Unit
 ) {
     SettingsCard(title = "DeepSeek 接入") {
         OutlinedTextField(
@@ -222,19 +219,18 @@ private fun ApiSection(
             style = MaterialTheme.typography.labelLarge,
             fontWeight = FontWeight.SemiBold
         )
-        Spacer(Modifier.height(6.dp))
-        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            FilterChip(
-                selected = state.settings.model == "deepseek-flash",
-                onClick = { onModelChange("deepseek-flash") },
-                label = { Text("deepseek-flash · 响应快，日常首选") }
-            )
-            FilterChip(
-                selected = state.settings.model == "deepseek-reasoner",
-                onClick = { onModelChange("deepseek-reasoner") },
-                label = { Text("deepseek-reasoner · 深度推理，速度较慢") }
-            )
-        }
+        Spacer(Modifier.height(4.dp))
+        Text(
+            text = "deepseek-flash",
+            style = MaterialTheme.typography.bodyMedium,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.primary
+        )
+        Text(
+            text = "固定使用该模型",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
     }
 }
 

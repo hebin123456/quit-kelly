@@ -24,7 +24,6 @@ data class AppSettings(
 
 private val Context.kellyDataStore by preferencesDataStore(name = "kelly_settings")
 
-private val KEY_MODEL = stringPreferencesKey("model")
 private val KEY_HOUR = intPreferencesKey("daily_hour")
 private val KEY_MINUTE = intPreferencesKey("daily_minute")
 private val KEY_SOURCES = stringPreferencesKey("enabled_sources")
@@ -43,7 +42,7 @@ class SettingsRepository(context: Context) {
         }
         .map { prefs ->
             AppSettings(
-                model = prefs[KEY_MODEL] ?: "deepseek-flash",
+                model = "deepseek-flash",
                 dailyHour = (prefs[KEY_HOUR] ?: 8).coerceIn(0, 23),
                 dailyMinute = (prefs[KEY_MINUTE] ?: 30).coerceIn(0, 59),
                 enabledSources = (prefs[KEY_SOURCES] ?: DEFAULT_SOURCES)
@@ -57,10 +56,6 @@ class SettingsRepository(context: Context) {
         }
 
     suspend fun snapshot(): AppSettings = flow.first()
-
-    suspend fun setModel(model: String) {
-        dataStore.edit { it[KEY_MODEL] = model }
-    }
 
     suspend fun setDailyTime(hour: Int, minute: Int) {
         dataStore.edit {

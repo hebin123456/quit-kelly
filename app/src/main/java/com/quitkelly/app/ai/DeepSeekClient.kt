@@ -130,9 +130,7 @@ class DeepSeekClient(baseClient: OkHttpClient) {
                 }
             })
             put("stream", stream)
-            if (!model.startsWith("deepseek-reasoner")) {
-                temperature?.let { put("temperature", it) }
-            }
+            temperature?.let { put("temperature", it) }
             maxTokens?.let { put("max_tokens", it) }
         }.toString()
     }

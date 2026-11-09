@@ -86,13 +86,6 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         }
     }
 
-    fun setModel(model: String) {
-        viewModelScope.launch {
-            container.settings.setModel(model)
-            _state.update { it.copy(message = "模型已切换") }
-        }
-    }
-
     fun setHour(hour: Int) {
         updateSchedule { it.copy(dailyHour = hour) }
     }
