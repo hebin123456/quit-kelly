@@ -73,7 +73,7 @@ fun ChatScreen(onOpenSettings: () -> Unit) {
         onPauseOrDispose { }
     }
 
-    val itemCount = state.messages.size + if (state.isStreaming) 1 else 0
+    val itemCount = state.messages.size + (if (state.isStreaming) 1 else 0)
     LaunchedEffect(itemCount, state.streamingText.length) {
         if (itemCount > 0) {
             runCatching { listState.scrollToItem(itemCount - 1) }
