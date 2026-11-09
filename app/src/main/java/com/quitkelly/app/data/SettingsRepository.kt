@@ -14,7 +14,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 
 data class AppSettings(
-    val model: String = "deepseek-chat",
+    val model: String = "deepseek-flash",
     val dailyHour: Int = 8,
     val dailyMinute: Int = 30,
     val enabledSources: Set<String> = setOf("wscn", "sina", "eastmoney"),
@@ -43,7 +43,7 @@ class SettingsRepository(context: Context) {
         }
         .map { prefs ->
             AppSettings(
-                model = prefs[KEY_MODEL] ?: "deepseek-chat",
+                model = prefs[KEY_MODEL] ?: "deepseek-flash",
                 dailyHour = (prefs[KEY_HOUR] ?: 8).coerceIn(0, 23),
                 dailyMinute = (prefs[KEY_MINUTE] ?: 30).coerceIn(0, 59),
                 enabledSources = (prefs[KEY_SOURCES] ?: DEFAULT_SOURCES)

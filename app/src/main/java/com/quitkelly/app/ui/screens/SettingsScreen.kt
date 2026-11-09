@@ -225,9 +225,9 @@ private fun ApiSection(
         Spacer(Modifier.height(6.dp))
         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
             FilterChip(
-                selected = state.settings.model == "deepseek-chat",
-                onClick = { onModelChange("deepseek-chat") },
-                label = { Text("deepseek-chat · 响应快，日常首选") }
+                selected = state.settings.model == "deepseek-flash",
+                onClick = { onModelChange("deepseek-flash") },
+                label = { Text("deepseek-flash · 响应快，日常首选") }
             )
             FilterChip(
                 selected = state.settings.model == "deepseek-reasoner",
