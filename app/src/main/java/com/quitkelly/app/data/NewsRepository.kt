@@ -1,9 +1,12 @@
 package com.quitkelly.app.data
 
 import com.quitkelly.app.data.news.EastmoneySource
+import com.quitkelly.app.data.news.Jin10Source
+import com.quitkelly.app.data.news.NbdSource
 import com.quitkelly.app.data.news.RawNews
 import com.quitkelly.app.data.news.RssNewsSource
 import com.quitkelly.app.data.news.SinaSource
+import com.quitkelly.app.data.news.ThsSource
 import com.quitkelly.app.data.news.WscnSource
 import java.security.MessageDigest
 import java.time.LocalDate
@@ -34,6 +37,12 @@ class NewsRepository(
             if ("wscn" in config.enabledSources) add(WscnSource(client))
             if ("sina" in config.enabledSources) add(SinaSource(client))
             if ("eastmoney" in config.enabledSources) add(EastmoneySource(client))
+            if ("ths" in config.enabledSources) add(ThsSource(client))
+            if ("jin10" in config.enabledSources) add(Jin10Source(client))
+            if ("nbd" in config.enabledSources) add(NbdSource(client))
+            if ("tmtpost" in config.enabledSources) {
+                add(RssNewsSource(client, "https://www.tmtpost.com/rss", "钛媒体"))
+            }
             config.customRssUrls.forEachIndexed { index, url ->
                 add(RssNewsSource(client, url, "自定义源 ${index + 1}"))
             }

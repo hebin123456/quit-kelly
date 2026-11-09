@@ -7,6 +7,7 @@ import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import com.quitkelly.app.data.news.NewsSourceCatalog
 import java.io.IOException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
@@ -17,7 +18,7 @@ data class AppSettings(
     val model: String = "deepseek-flash",
     val dailyHour: Int = 8,
     val dailyMinute: Int = 30,
-    val enabledSources: Set<String> = setOf("wscn", "sina", "eastmoney"),
+    val enabledSources: Set<String> = NewsSourceCatalog.defaultIds,
     val customRssUrls: List<String> = emptyList(),
     val notificationsEnabled: Boolean = true
 )
@@ -29,8 +30,9 @@ private val KEY_MINUTE = intPreferencesKey("daily_minute")
 private val KEY_SOURCES = stringPreferencesKey("enabled_sources")
 private val KEY_RSS = stringPreferencesKey("custom_rss")
 private val KEY_NOTIFY = booleanPreferencesKey("notifications_enabled")
+private val KEY_SOURCES_MIGRATED = booleanPreferencesKey("sources_migrated_v2")
 
-private const val DEFAULT_SOURCES = "wscn,sina,eastmoney"
+private val DEFAULT_SOURCES = NewsSourceCatalog.defaultIds.joinToString(",")
 
 class SettingsRepository(context: Context) {
 
@@ -56,6 +58,23 @@ class SettingsRepository(context: Context) {
         }
 
     suspend fun snapshot(): AppSettings = flow.first()
+
+    suspend fun migrateSourceDefaults() {
+        dataStore.edit { prefs ->
+            if (prefs[KEY_SOURCES_MIGRATED] == true) return@edit
+            val stored = prefs[KEY_SOURCES]
+            val ids = if (stored.isNullOrBlank()) {
+                NewsSourceCatalog.defaultIds
+            } else {
+                stored.split(',')
+                    .map { it.trim() }
+                    .filter { it.isNotEmpty() }
+                    .toSet()
+            }
+            prefs[KEY_SOURCES] = (ids + NewsSourceCatalog.newIds).joinToString(",")
+            prefs[KEY_SOURCES_MIGRATED] = true
+        }
+    }
 
     suspend fun setDailyTime(hour: Int, minute: Int) {
         dataStore.edit {

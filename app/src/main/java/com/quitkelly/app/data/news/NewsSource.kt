@@ -27,8 +27,12 @@ internal val newsJson = Json {
     isLenient = true
 }
 
-internal fun OkHttpClient.fetchText(url: String, referer: String? = null): String {
-    val request = Request.Builder()
+internal fun OkHttpClient.fetchText(
+    url: String,
+    referer: String? = null,
+    headers: Map<String, String> = emptyMap()
+): String {
+    val builder = Request.Builder()
         .url(url)
         .header(
             "User-Agent",
@@ -36,8 +40,9 @@ internal fun OkHttpClient.fetchText(url: String, referer: String? = null): Strin
         )
         .header("Accept", "application/json, text/plain, */*")
         .header("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.6")
-        .apply { referer?.let { header("Referer", it) } }
-        .build()
+    referer?.let { builder.header("Referer", it) }
+    headers.forEach { (key, value) -> builder.header(key, value) }
+    val request = builder.build()
     newCall(request).execute().use { response ->
         if (!response.isSuccessful) {
             error("HTTP ${response.code}")

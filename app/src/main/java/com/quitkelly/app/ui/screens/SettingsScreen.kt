@@ -46,6 +46,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.quitkelly.app.BuildConfig
 import com.quitkelly.app.KellyApp
+import com.quitkelly.app.data.news.NewsSourceCatalog
 import com.quitkelly.app.ui.components.KellyTopBar
 import com.quitkelly.app.ui.vm.SettingsUiState
 import com.quitkelly.app.ui.vm.SettingsViewModel
@@ -290,24 +291,15 @@ private fun SourcesSection(
     onRssSave: () -> Unit
 ) {
     SettingsCard(title = "新闻源") {
-        SourceSwitch(
-            label = "华尔街见闻 · 7×24 快讯",
-            id = "wscn",
-            checked = "wscn" in state.settings.enabledSources,
-            onToggle = onSourceToggle
-        )
-        SourceSwitch(
-            label = "新浪财经 · 滚动新闻",
-            id = "sina",
-            checked = "sina" in state.settings.enabledSources,
-            onToggle = onSourceToggle
-        )
-        SourceSwitch(
-            label = "东方财富 · 财经要闻",
-            id = "eastmoney",
-            checked = "eastmoney" in state.settings.enabledSources,
-            onToggle = onSourceToggle
-        )
+        NewsSourceCatalog.all.forEach { source ->
+            SourceSwitch(
+                label = source.name,
+                description = source.description,
+                id = source.id,
+                checked = source.id in state.settings.enabledSources,
+                onToggle = onSourceToggle
+            )
+        }
         Spacer(Modifier.height(10.dp))
         OutlinedTextField(
             value = state.rssText,
@@ -327,6 +319,7 @@ private fun SourcesSection(
 @Composable
 private fun SourceSwitch(
     label: String,
+    description: String,
     id: String,
     checked: Boolean,
     onToggle: (String, Boolean) -> Unit
@@ -337,11 +330,21 @@ private fun SourceSwitch(
             .padding(vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Text(
-            text = label,
-            modifier = Modifier.weight(1f),
-            style = MaterialTheme.typography.bodyMedium
-        )
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .padding(end = 8.dp)
+        ) {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.bodyMedium
+            )
+            Text(
+                text = description,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
         Switch(
             checked = checked,
             onCheckedChange = { onToggle(id, it) }

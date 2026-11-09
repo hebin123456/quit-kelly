@@ -21,6 +21,7 @@ class KellyApp : Application() {
         NotificationHelper.createChannel(this)
 
         appScope.launch {
+            container.settings.migrateSourceDefaults()
             val settings = container.settings.snapshot()
             WorkScheduler.schedule(this@KellyApp, settings)
         }
