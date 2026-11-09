@@ -32,6 +32,14 @@ data class DigestEntity(
     val createdAt: Long
 )
 
+@Entity(tableName = "chat_sessions")
+data class ChatSessionEntity(
+    @PrimaryKey val id: String,
+    val title: String,
+    val createdAt: Long,
+    val updatedAt: Long
+)
+
 @Entity(
     tableName = "chat_messages",
     indices = [Index(value = ["createdAt"])]
@@ -41,5 +49,6 @@ data class ChatMessageEntity(
     val role: String,
     val content: String,
     val createdAt: Long,
-    @ColumnInfo(defaultValue = "''") val attachmentsJson: String = ""
+    @ColumnInfo(defaultValue = "''") val attachmentsJson: String = "",
+    @ColumnInfo(defaultValue = "''") val sessionId: String = ""
 )

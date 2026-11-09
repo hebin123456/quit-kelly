@@ -11,17 +11,24 @@ import com.quitkelly.app.ai.AiMessage
 import com.quitkelly.app.ai.Prompts
 import com.quitkelly.app.data.AttachmentStore
 import com.quitkelly.app.data.ChatMessageEntity
+import com.quitkelly.app.data.ChatSessionEntity
 import com.quitkelly.app.data.PendingAttachment
 import java.time.LocalDate
+import java.util.UUID
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 data class ChatUiState(
     val messages: List<ChatMessageEntity> = emptyList(),
+    val sessions: List<ChatSessionEntity> = emptyList(),
+    val currentSessionId: String? = null,
     val streamingText: String = "",
     val isStreaming: Boolean = false,
     val error: String? = null,
@@ -30,16 +37,33 @@ data class ChatUiState(
     val importingAttachment: Boolean = false
 )
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class ChatViewModel(private val container: AppContainer) : ViewModel() {
 
     private val _state = MutableStateFlow(ChatUiState())
     val state: StateFlow<ChatUiState> = _state.asStateFlow()
 
+    private val currentSessionId = MutableStateFlow<String?>(null)
+
     init {
         viewModelScope.launch {
-            container.database.chatDao().allFlow().collect { messages ->
-                _state.update { it.copy(messages = messages) }
+            container.database.chatSessionDao().allFlow().collect { sessions ->
+                _state.update { it.copy(sessions = sessions) }
             }
+        }
+        viewModelScope.launch {
+            val latest = container.database.chatSessionDao().latest()
+            val id = latest?.id ?: createSessionInternal()
+            currentSessionId.value = id
+            _state.update { it.copy(currentSessionId = id) }
+        }
+        viewModelScope.launch {
+            currentSessionId
+                .filterNotNull()
+                .flatMapLatest { id -> container.database.chatDao().messagesFlow(id) }
+                .collect { messages ->
+                    _state.update { it.copy(messages = messages) }
+                }
         }
         viewModelScope.launch {
             _state.update { it.copy(hasApiKey = container.secretStore.apiKey().isNotBlank()) }
@@ -48,6 +72,56 @@ class ChatViewModel(private val container: AppContainer) : ViewModel() {
 
     fun refreshKeyState() {
         _state.update { it.copy(hasApiKey = container.secretStore.apiKey().isNotBlank()) }
+    }
+
+    fun newSession() {
+        if (_state.value.isStreaming) return
+        viewModelScope.launch {
+            val id = createSessionInternal()
+            currentSessionId.value = id
+            _state.update {
+                it.copy(
+                    currentSessionId = id,
+                    messages = emptyList(),
+                    pendingAttachments = emptyList(),
+                    error = null
+                )
+            }
+        }
+    }
+
+    fun selectSession(id: String) {
+        if (_state.value.isStreaming || id == _state.value.currentSessionId) return
+        currentSessionId.value = id
+        _state.update {
+            it.copy(
+                currentSessionId = id,
+                messages = emptyList(),
+                pendingAttachments = emptyList(),
+                error = null
+            )
+        }
+    }
+
+    fun deleteSession(id: String) {
+        if (_state.value.isStreaming) return
+        viewModelScope.launch {
+            val wasCurrent = _state.value.currentSessionId == id
+            container.database.chatDao().clearSession(id)
+            container.database.chatSessionDao().delete(id)
+            if (wasCurrent) {
+                val nextId = container.database.chatSessionDao().latest()?.id
+                    ?: createSessionInternal()
+                currentSessionId.value = nextId
+                _state.update {
+                    it.copy(
+                        currentSessionId = nextId,
+                        messages = emptyList(),
+                        pendingAttachments = emptyList()
+                    )
+                }
+            }
+        }
     }
 
     fun addImages(uris: List<Uri>) {
@@ -117,6 +191,12 @@ class ChatViewModel(private val container: AppContainer) : ViewModel() {
         if ((text.isEmpty() && pending.isEmpty()) || _state.value.isStreaming) return
         if (_state.value.importingAttachment) return
 
+        val sessionId = _state.value.currentSessionId
+        if (sessionId == null) {
+            _state.update { it.copy(error = "会话初始化中，请稍后再试") }
+            return
+        }
+
         val apiKey = container.secretStore.apiKey()
         if (apiKey.isBlank()) {
             _state.update {
@@ -131,16 +211,18 @@ class ChatViewModel(private val container: AppContainer) : ViewModel() {
             }
             try {
                 val dao = container.database.chatDao()
-                val history = dao.recent(20).sortedBy { it.createdAt }
+                val history = dao.recent(sessionId, 20).sortedBy { it.createdAt }
                 val attachmentsJson = container.attachmentStore.toJson(pending)
                 dao.insert(
                     ChatMessageEntity(
                         role = "user",
                         content = text,
                         createdAt = System.currentTimeMillis(),
-                        attachmentsJson = attachmentsJson
+                        attachmentsJson = attachmentsJson,
+                        sessionId = sessionId
                     )
                 )
+                touchSession(sessionId, text, pending)
                 _state.update { it.copy(pendingAttachments = emptyList()) }
 
                 val settings = container.settings.snapshot()
@@ -190,9 +272,15 @@ class ChatViewModel(private val container: AppContainer) : ViewModel() {
                     ChatMessageEntity(
                         role = "assistant",
                         content = answer,
-                        createdAt = System.currentTimeMillis()
+                        createdAt = System.currentTimeMillis(),
+                        sessionId = sessionId
                     )
                 )
+                container.database.chatSessionDao().byId(sessionId)?.let { session ->
+                    container.database.chatSessionDao().upsert(
+                        session.copy(updatedAt = System.currentTimeMillis())
+                    )
+                }
                 _state.update { it.copy(isStreaming = false, streamingText = "") }
             } catch (t: Throwable) {
                 _state.update {
@@ -208,8 +296,14 @@ class ChatViewModel(private val container: AppContainer) : ViewModel() {
 
     fun clearChat() {
         if (_state.value.isStreaming) return
+        val sessionId = _state.value.currentSessionId ?: return
         viewModelScope.launch {
-            container.database.chatDao().clear()
+            container.database.chatDao().clearSession(sessionId)
+            container.database.chatSessionDao().byId(sessionId)?.let { session ->
+                container.database.chatSessionDao().upsert(
+                    session.copy(title = DEFAULT_TITLE, updatedAt = System.currentTimeMillis())
+                )
+            }
             _state.update { it.copy(error = null, pendingAttachments = emptyList()) }
         }
     }
@@ -218,7 +312,43 @@ class ChatViewModel(private val container: AppContainer) : ViewModel() {
         _state.update { it.copy(error = null) }
     }
 
+    private suspend fun createSessionInternal(): String {
+        val id = UUID.randomUUID().toString()
+        val now = System.currentTimeMillis()
+        container.database.chatSessionDao().upsert(
+            ChatSessionEntity(
+                id = id,
+                title = DEFAULT_TITLE,
+                createdAt = now,
+                updatedAt = now
+            )
+        )
+        return id
+    }
+
+    private suspend fun touchSession(
+        sessionId: String,
+        text: String,
+        attachments: List<PendingAttachment>
+    ) {
+        val dao = container.database.chatSessionDao()
+        val session = dao.byId(sessionId) ?: return
+        val title = if (session.title == DEFAULT_TITLE) {
+            val fromText = text.trim().replace(Regex("\\s+"), " ").take(20)
+            val fromAttachment = attachments.firstOrNull()?.name
+                ?.substringBeforeLast('.')
+                ?.take(20)
+                .orEmpty()
+            fromText.ifBlank { fromAttachment }.ifBlank { DEFAULT_TITLE }
+        } else {
+            session.title
+        }
+        dao.upsert(session.copy(title = title, updatedAt = System.currentTimeMillis()))
+    }
+
     companion object {
+        private const val DEFAULT_TITLE = "新对话"
+
         fun factory(container: AppContainer): ViewModelProvider.Factory = viewModelFactory {
             initializer { ChatViewModel(container) }
         }

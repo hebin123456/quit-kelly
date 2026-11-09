@@ -5,6 +5,7 @@ import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -14,6 +15,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -27,17 +29,21 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.List
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -69,15 +75,18 @@ import com.quitkelly.app.KellyApp
 import com.quitkelly.app.R
 import com.quitkelly.app.data.ChatAttachment
 import com.quitkelly.app.data.ChatMessageEntity
+import com.quitkelly.app.data.ChatSessionEntity
 import com.quitkelly.app.data.PendingAttachment
 import com.quitkelly.app.ui.components.KellyAvatar
 import com.quitkelly.app.ui.components.KellyTopBar
 import com.quitkelly.app.ui.components.MarkdownText
 import com.quitkelly.app.ui.components.MessageBanner
 import com.quitkelly.app.ui.vm.ChatViewModel
+import com.quitkelly.app.util.formatTime
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ChatScreen(onOpenSettings: () -> Unit) {
     val context = LocalContext.current
@@ -98,6 +107,8 @@ fun ChatScreen(onOpenSettings: () -> Unit) {
 
     val listState = rememberLazyListState()
     var input by rememberSaveable { mutableStateOf("") }
+    var showSessions by remember { mutableStateOf(false) }
+    val currentTitle = state.sessions.firstOrNull { it.id == state.currentSessionId }?.title
 
     LifecycleResumeEffect(Unit) {
         viewModel.refreshKeyState()
@@ -118,8 +129,14 @@ fun ChatScreen(onOpenSettings: () -> Unit) {
     Column(modifier = Modifier.fillMaxSize()) {
         KellyTopBar(
             title = "凯小丽",
-            subtitle = "财经专家智能体 · 支持图片与文件",
+            subtitle = currentTitle ?: "财经专家智能体 · 支持图片与文件",
             actions = {
+                IconButton(
+                    onClick = { showSessions = true },
+                    enabled = !state.isStreaming
+                ) {
+                    Icon(Icons.Filled.List, contentDescription = "对话记录")
+                }
                 IconButton(
                     onClick = viewModel::clearChat,
                     enabled = !state.isStreaming
@@ -169,7 +186,7 @@ fun ChatScreen(onOpenSettings: () -> Unit) {
             }
         }
 
-        if (state.messages.isEmpty() && !state.isStreaming) {
+        if (!state.isStreaming) {
             QuickPrompts(onPick = viewModel::send)
             Spacer(Modifier.height(6.dp))
         }
@@ -194,6 +211,101 @@ fun ChatScreen(onOpenSettings: () -> Unit) {
             onPickFile = { filePicker.launch(arrayOf("*/*")) },
             onRemoveAttachment = viewModel::removeAttachment
         )
+    }
+
+    if (showSessions) {
+        ModalBottomSheet(onDismissRequest = { showSessions = false }) {
+            SessionSheet(
+                sessions = state.sessions,
+                currentSessionId = state.currentSessionId,
+                onSelect = { id ->
+                    viewModel.selectSession(id)
+                    showSessions = false
+                },
+                onDelete = viewModel::deleteSession,
+                onNew = {
+                    viewModel.newSession()
+                    showSessions = false
+                }
+            )
+        }
+    }
+}
+
+@Composable
+private fun SessionSheet(
+    sessions: List<ChatSessionEntity>,
+    currentSessionId: String?,
+    onSelect: (String) -> Unit,
+    onDelete: (String) -> Unit,
+    onNew: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp)
+            .padding(bottom = 28.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = "对话记录",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.weight(1f)
+            )
+            TextButton(onClick = onNew) {
+                Icon(
+                    imageVector = Icons.Filled.Add,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(Modifier.width(4.dp))
+                Text("新建对话")
+            }
+        }
+        Spacer(Modifier.height(4.dp))
+        LazyColumn(modifier = Modifier.heightIn(max = 420.dp)) {
+            items(sessions, key = { it.id }) { session ->
+                val selected = session.id == currentSessionId
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(
+                            if (selected) {
+                                MaterialTheme.colorScheme.primaryContainer
+                            } else {
+                                Color.Transparent
+                            }
+                        )
+                        .clickable { onSelect(session.id) }
+                        .padding(start = 12.dp, top = 6.dp, bottom = 6.dp, end = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            text = session.title,
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Text(
+                            text = formatTime(session.updatedAt),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    IconButton(onClick = { onDelete(session.id) }) {
+                        Icon(
+                            imageVector = Icons.Filled.Delete,
+                            contentDescription = "删除会话",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -387,15 +499,23 @@ private fun QuickPrompts(onPick: (String) -> Unit) {
         "对 A 股影响最大的三件事是什么？",
         "帮我梳理今天的投资主线"
     )
-    LazyRow(
-        contentPadding = PaddingValues(horizontal = 16.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp)
-    ) {
-        items(prompts) { prompt ->
-            AssistChip(
-                onClick = { onPick(prompt) },
-                label = { Text(prompt) }
-            )
+    Column {
+        Text(
+            text = "推荐提问",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp)
+        )
+        LazyRow(
+            contentPadding = PaddingValues(horizontal = 16.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            items(prompts) { prompt ->
+                AssistChip(
+                    onClick = { onPick(prompt) },
+                    label = { Text(prompt) }
+                )
+            }
         }
     }
 }

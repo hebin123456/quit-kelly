@@ -45,17 +45,36 @@ interface DigestDao {
 }
 
 @Dao
+interface ChatSessionDao {
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(session: ChatSessionEntity)
+
+    @Query("SELECT * FROM chat_sessions ORDER BY updatedAt DESC")
+    fun allFlow(): Flow<List<ChatSessionEntity>>
+
+    @Query("SELECT * FROM chat_sessions ORDER BY updatedAt DESC LIMIT 1")
+    suspend fun latest(): ChatSessionEntity?
+
+    @Query("SELECT * FROM chat_sessions WHERE id = :id")
+    suspend fun byId(id: String): ChatSessionEntity?
+
+    @Query("DELETE FROM chat_sessions WHERE id = :id")
+    suspend fun delete(id: String)
+}
+
+@Dao
 interface ChatDao {
 
     @Insert
     suspend fun insert(message: ChatMessageEntity): Long
 
-    @Query("SELECT * FROM chat_messages ORDER BY createdAt ASC, id ASC")
-    fun allFlow(): Flow<List<ChatMessageEntity>>
+    @Query("SELECT * FROM chat_messages WHERE sessionId = :sessionId ORDER BY createdAt ASC, id ASC")
+    fun messagesFlow(sessionId: String): Flow<List<ChatMessageEntity>>
 
-    @Query("SELECT * FROM chat_messages ORDER BY createdAt DESC, id DESC LIMIT :limit")
-    suspend fun recent(limit: Int): List<ChatMessageEntity>
+    @Query("SELECT * FROM chat_messages WHERE sessionId = :sessionId ORDER BY createdAt DESC, id DESC LIMIT :limit")
+    suspend fun recent(sessionId: String, limit: Int): List<ChatMessageEntity>
 
-    @Query("DELETE FROM chat_messages")
-    suspend fun clear()
+    @Query("DELETE FROM chat_messages WHERE sessionId = :sessionId")
+    suspend fun clearSession(sessionId: String)
 }

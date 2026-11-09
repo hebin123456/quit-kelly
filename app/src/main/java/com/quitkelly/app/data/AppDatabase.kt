@@ -8,8 +8,13 @@ import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
-    entities = [NewsItemEntity::class, DigestEntity::class, ChatMessageEntity::class],
-    version = 2,
+    entities = [
+        NewsItemEntity::class,
+        DigestEntity::class,
+        ChatSessionEntity::class,
+        ChatMessageEntity::class
+    ],
+    version = 3,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -17,6 +22,8 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun newsDao(): NewsDao
 
     abstract fun digestDao(): DigestDao
+
+    abstract fun chatSessionDao(): ChatSessionDao
 
     abstract fun chatDao(): ChatDao
 
@@ -32,6 +39,35 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS chat_sessions (
+                        id TEXT NOT NULL PRIMARY KEY,
+                        title TEXT NOT NULL,
+                        createdAt INTEGER NOT NULL,
+                        updatedAt INTEGER NOT NULL
+                    )
+                    """.trimIndent()
+                )
+                database.execSQL(
+                    "ALTER TABLE chat_messages ADD COLUMN sessionId TEXT NOT NULL DEFAULT ''"
+                )
+                database.execSQL(
+                    "UPDATE chat_messages SET sessionId = 'default' WHERE sessionId = ''"
+                )
+                database.execSQL(
+                    """
+                    INSERT OR IGNORE INTO chat_sessions (id, title, createdAt, updatedAt)
+                    SELECT 'default', '历史对话', MIN(createdAt), MAX(createdAt)
+                    FROM chat_messages
+                    HAVING COUNT(*) > 0
+                    """.trimIndent()
+                )
+            }
+        }
+
         fun get(context: Context): AppDatabase {
             return instance ?: synchronized(this) {
                 instance ?: Room.databaseBuilder(
@@ -39,7 +75,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "kelly.db"
                 )
-                    .addMigrations(MIGRATION_1_2)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
                     .fallbackToDestructiveMigration()
                     .build()
                     .also { instance = it }
