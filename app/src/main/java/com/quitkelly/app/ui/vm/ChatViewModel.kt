@@ -104,6 +104,17 @@ class ChatViewModel(private val container: AppContainer) : ViewModel() {
         }
     }
 
+    fun renameSession(id: String, title: String) {
+        val trimmed = title.trim().take(30)
+        if (trimmed.isBlank()) return
+        viewModelScope.launch {
+            val dao = container.database.chatSessionDao()
+            dao.byId(id)?.let { session ->
+                dao.upsert(session.copy(title = trimmed))
+            }
+        }
+    }
+
     fun deleteSession(id: String) {
         if (_state.value.isStreaming) return
         viewModelScope.launch {

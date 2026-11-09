@@ -27,12 +27,15 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.List
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -108,6 +111,8 @@ fun ChatScreen(onOpenSettings: () -> Unit) {
     val listState = rememberLazyListState()
     var input by rememberSaveable { mutableStateOf("") }
     var showSessions by remember { mutableStateOf(false) }
+    var renameTarget by remember { mutableStateOf<ChatSessionEntity?>(null) }
+    var renameInput by remember { mutableStateOf("") }
     val currentTitle = state.sessions.firstOrNull { it.id == state.currentSessionId }?.title
 
     LifecycleResumeEffect(Unit) {
@@ -222,6 +227,11 @@ fun ChatScreen(onOpenSettings: () -> Unit) {
                     viewModel.selectSession(id)
                     showSessions = false
                 },
+                onRename = { session ->
+                    showSessions = false
+                    renameTarget = session
+                    renameInput = session.title
+                },
                 onDelete = viewModel::deleteSession,
                 onNew = {
                     viewModel.newSession()
@@ -230,6 +240,39 @@ fun ChatScreen(onOpenSettings: () -> Unit) {
             )
         }
     }
+
+    val target = renameTarget
+    if (target != null) {
+        AlertDialog(
+            onDismissRequest = { renameTarget = null },
+            title = { Text("重命名对话") },
+            text = {
+                OutlinedTextField(
+                    value = renameInput,
+                    onValueChange = { renameInput = it },
+                    label = { Text("对话名称") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        viewModel.renameSession(target.id, renameInput)
+                        renameTarget = null
+                    },
+                    enabled = renameInput.isNotBlank()
+                ) {
+                    Text("保存")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { renameTarget = null }) {
+                    Text("取消")
+                }
+            }
+        )
+    }
 }
 
 @Composable
@@ -237,6 +280,7 @@ private fun SessionSheet(
     sessions: List<ChatSessionEntity>,
     currentSessionId: String?,
     onSelect: (String) -> Unit,
+    onRename: (ChatSessionEntity) -> Unit,
     onDelete: (String) -> Unit,
     onNew: () -> Unit
 ) {
@@ -294,6 +338,13 @@ private fun SessionSheet(
                             text = formatTime(session.updatedAt),
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    IconButton(onClick = { onRename(session) }) {
+                        Icon(
+                            imageVector = Icons.Filled.Edit,
+                            contentDescription = "重命名会话",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                     IconButton(onClick = { onDelete(session.id) }) {
@@ -374,22 +425,24 @@ private fun MessageRow(message: ChatMessageEntity, attachments: List<ChatAttachm
             tonalElevation = if (isUser) 0.dp else 1.dp,
             modifier = Modifier.widthIn(max = 330.dp)
         ) {
-            Column(Modifier.padding(12.dp)) {
-                if (message.content.isNotBlank()) {
-                    if (isUser) {
-                        Text(
-                            text = message.content,
-                            style = MaterialTheme.typography.bodyMedium
-                        )
-                    } else {
-                        MarkdownText(message.content)
+            SelectionContainer {
+                Column(Modifier.padding(12.dp)) {
+                    if (message.content.isNotBlank()) {
+                        if (isUser) {
+                            Text(
+                                text = message.content,
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                        } else {
+                            MarkdownText(message.content)
+                        }
                     }
-                }
-                if (attachments.isNotEmpty()) {
-                    if (message.content.isNotBlank()) Spacer(Modifier.height(8.dp))
-                    attachments.forEachIndexed { index, attachment ->
-                        if (index > 0) Spacer(Modifier.height(6.dp))
-                        AttachmentItem(attachment = attachment, isUser = isUser)
+                    if (attachments.isNotEmpty()) {
+                        if (message.content.isNotBlank()) Spacer(Modifier.height(8.dp))
+                        attachments.forEachIndexed { index, attachment ->
+                            if (index > 0) Spacer(Modifier.height(6.dp))
+                            AttachmentItem(attachment = attachment, isUser = isUser)
+                        }
                     }
                 }
             }
