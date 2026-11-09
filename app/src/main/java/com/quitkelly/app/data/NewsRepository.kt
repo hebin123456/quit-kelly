@@ -3,11 +3,14 @@ package com.quitkelly.app.data
 import com.quitkelly.app.data.news.EastmoneySource
 import com.quitkelly.app.data.news.Jin10Source
 import com.quitkelly.app.data.news.NbdSource
+import com.quitkelly.app.data.news.NeteaseSource
 import com.quitkelly.app.data.news.RawNews
 import com.quitkelly.app.data.news.RssNewsSource
 import com.quitkelly.app.data.news.SinaSource
 import com.quitkelly.app.data.news.ThsSource
+import com.quitkelly.app.data.news.TwentyOneSource
 import com.quitkelly.app.data.news.WscnSource
+import com.quitkelly.app.data.news.YicaiSource
 import java.security.MessageDigest
 import java.time.LocalDate
 import java.time.ZoneId
@@ -43,6 +46,9 @@ class NewsRepository(
             if ("tmtpost" in config.enabledSources) {
                 add(RssNewsSource(client, "https://www.tmtpost.com/rss", "钛媒体"))
             }
+            if ("yicai" in config.enabledSources) add(YicaiSource(client))
+            if ("21jingji" in config.enabledSources) add(TwentyOneSource(client))
+            if ("netease" in config.enabledSources) add(NeteaseSource(client))
             config.customRssUrls.forEachIndexed { index, url ->
                 add(RssNewsSource(client, url, "自定义源 ${index + 1}"))
             }
