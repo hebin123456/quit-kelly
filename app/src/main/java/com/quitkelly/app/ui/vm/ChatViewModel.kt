@@ -13,6 +13,7 @@ import com.quitkelly.app.data.AttachmentStore
 import com.quitkelly.app.data.ChatMessageEntity
 import com.quitkelly.app.data.ChatSessionEntity
 import com.quitkelly.app.data.PendingAttachment
+import com.quitkelly.app.util.formatTime
 import java.time.LocalDate
 import java.util.UUID
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -226,7 +227,14 @@ class ChatViewModel(private val container: AppContainer) : ViewModel() {
                 _state.update { it.copy(pendingAttachments = emptyList()) }
 
                 val settings = container.settings.snapshot()
-                val digest = container.database.digestDao().byDate(LocalDate.now().toString())
+                val today = LocalDate.now()
+                val digest = container.database.digestDao().byDate(today.toString())
+                    ?: container.database.digestDao().latest()
+                val news = container.newsRepository.forDate(today)
+                    .ifEmpty { container.newsRepository.recent(15) }
+                val headlines = news.take(15).joinToString("\n") { item ->
+                    "- ${formatTime(item.publishedAt)}【${item.source}】${item.title.take(90)}"
+                }
                 val imageUrls = container.attachmentStore.buildImageDataUrls(pending)
                 val attachmentText = container.attachmentStore.buildTextContext(pending)
 
@@ -240,7 +248,17 @@ class ChatViewModel(private val container: AppContainer) : ViewModel() {
                 }
 
                 val messages = buildList {
-                    add(AiMessage("system", Prompts.chatSystem(LocalDate.now().toString(), digest?.content)))
+                    add(
+                        AiMessage(
+                            "system",
+                            Prompts.chatSystem(
+                                date = today.toString(),
+                                digestDate = digest?.date,
+                                digest = digest?.content,
+                                headlines = headlines
+                            )
+                        )
+                    )
                     history.forEach { message ->
                         val attachments = container.attachmentStore.fromJson(message.attachmentsJson)
                         val content = if (attachments.isEmpty()) {
