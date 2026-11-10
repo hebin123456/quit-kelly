@@ -89,7 +89,8 @@ class JiemianSource(private val client: OkHttpClient) : NewsSource {
                     summary = "",
                     url = url,
                     publishedAt = now - index * 60_000L,
-                    source = name
+                    source = name,
+                    timeApproximate = true
                 )
             }
             .distinctBy { it.url }

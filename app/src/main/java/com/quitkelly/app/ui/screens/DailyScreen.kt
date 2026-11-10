@@ -61,7 +61,7 @@ import com.quitkelly.app.ui.components.MessageBanner
 import com.quitkelly.app.ui.vm.DailyUiState
 import com.quitkelly.app.ui.vm.DailyViewModel
 import com.quitkelly.app.util.formatDateLabel
-import com.quitkelly.app.util.formatTime
+import com.quitkelly.app.util.formatNewsTime
 import com.quitkelly.app.util.greeting
 import com.quitkelly.app.util.shortDate
 
@@ -388,7 +388,7 @@ private fun NewsCard(item: NewsItemEntity, onClick: () -> Unit) {
                 )
                 Spacer(Modifier.width(8.dp))
                 Text(
-                    text = formatTime(item.publishedAt),
+                    text = formatNewsTime(item.publishedAt, item.timeApproximate),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )

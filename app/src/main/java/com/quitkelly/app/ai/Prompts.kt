@@ -1,7 +1,7 @@
 package com.quitkelly.app.ai
 
 import com.quitkelly.app.data.NewsItemEntity
-import com.quitkelly.app.util.formatTime
+import com.quitkelly.app.util.formatNewsTime
 
 object Prompts {
 
@@ -17,7 +17,7 @@ object Prompts {
             appendLine("以下是我今天抓取到的财经新闻（共 ${news.size} 条），请基于这些材料撰写一份中文财经日报。")
             appendLine()
             news.forEachIndexed { index, item ->
-                appendLine("${index + 1}. 【${item.source}】${formatTime(item.publishedAt)} ${item.title}")
+                appendLine("${index + 1}. 【${item.source}】${formatNewsTime(item.publishedAt, item.timeApproximate)} ${item.title}")
                 if (item.summary.isNotBlank()) {
                     appendLine("   摘要：${item.summary.take(180)}")
                 }

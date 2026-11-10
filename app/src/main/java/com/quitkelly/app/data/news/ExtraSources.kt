@@ -94,34 +94,73 @@ class NbdSource(private val client: OkHttpClient) : NewsSource {
     override val name: String = "每日经济新闻"
 
     private val zone = ZoneId.of("Asia/Shanghai")
-    private val pattern = Regex(
+    private val dateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
+
+    private val itemPattern = Regex(
+        """<div class="item">\s*<h3>\s*<a href="(https://www\.nbd\.com\.cn/articles/(\d{4}-\d{2}-\d{2})/\d+\.html)"[^>]*>(.*?)</a>\s*</h3>\s*<div class="bottom">\s*<p>([^<]*)</p>""",
+        setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)
+    )
+    private val linkPattern = Regex(
         """<a[^>]*href="(https://www\.nbd\.com\.cn/articles/(\d{4}-\d{2}-\d{2})/\d+\.html)"[^>]*?(?:title="([^"]*)")?[^>]*>(.*?)</a>""",
         setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)
     )
+    private val timePattern = Regex("""(\d{4}-\d{2}-\d{2} \d{2}:\d{2})""")
 
     override suspend fun fetch(): List<RawNews> {
         val html = client.fetchText("https://www.nbd.com.cn/")
-        return pattern.findAll(html).mapNotNull { match ->
+        val result = mutableListOf<RawNews>()
+
+        itemPattern.findAll(html).forEach { match ->
+            val url = match.groupValues[1]
+            val date = match.groupValues[2]
+            val title = stripHtml(match.groupValues[3]).trim()
+            if (title.length < 6) return@forEach
+            val timeText = timePattern.find(match.groupValues[4])?.groupValues?.get(1)
+            result += RawNews(
+                title = title.take(120),
+                summary = "",
+                url = url,
+                publishedAt = if (timeText != null) parseDateTime(timeText) else startOfDay(date),
+                source = name,
+                timeApproximate = timeText == null
+            )
+        }
+
+        linkPattern.findAll(html).forEach { match ->
             val url = match.groupValues[1]
             val date = match.groupValues[2]
             val titleAttr = stripHtml(match.groupValues[4])
             val inner = stripHtml(match.groupValues[5])
             val title = titleAttr.ifBlank { inner }.trim()
-            if (title.length < 6) return@mapNotNull null
-            val published = runCatching {
-                LocalDate.parse(date)
-                    .atTime(12, 0)
-                    .atZone(zone)
-                    .toInstant()
-                    .toEpochMilli()
-            }.getOrElse { System.currentTimeMillis() }
-            RawNews(
+            if (title.length < 6) return@forEach
+            result += RawNews(
                 title = title.take(120),
                 summary = "",
                 url = url,
-                publishedAt = published,
-                source = name
+                publishedAt = startOfDay(date),
+                source = name,
+                timeApproximate = true
             )
-        }.distinctBy { it.url }.take(40).toList()
+        }
+
+        return result.distinctBy { it.url }.take(40).toList()
+    }
+
+    private fun parseDateTime(raw: String): Long {
+        return runCatching {
+            LocalDateTime.parse(raw.trim(), dateTimeFormatter)
+                .atZone(zone)
+                .toInstant()
+                .toEpochMilli()
+        }.getOrElse { System.currentTimeMillis() }
+    }
+
+    private fun startOfDay(date: String): Long {
+        return runCatching {
+            LocalDate.parse(date)
+                .atStartOfDay(zone)
+                .toInstant()
+                .toEpochMilli()
+        }.getOrElse { System.currentTimeMillis() }
     }
 }

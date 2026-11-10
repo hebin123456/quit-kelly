@@ -94,8 +94,7 @@ class TwentyOneSource(private val client: OkHttpClient) : NewsSource {
     private fun toNews(url: String, date: String, title: String): RawNews {
         val published = runCatching {
             LocalDate.parse(date, dateFormatter)
-                .atTime(12, 0)
-                .atZone(zone)
+                .atStartOfDay(zone)
                 .toInstant()
                 .toEpochMilli()
         }.getOrElse { System.currentTimeMillis() }
@@ -104,7 +103,8 @@ class TwentyOneSource(private val client: OkHttpClient) : NewsSource {
             summary = "",
             url = url,
             publishedAt = published,
-            source = name
+            source = name,
+            timeApproximate = true
         )
     }
 }
@@ -132,7 +132,8 @@ class NeteaseSource(private val client: OkHttpClient) : NewsSource {
                     summary = "",
                     url = url,
                     publishedAt = now - index * 60_000L,
-                    source = name
+                    source = name,
+                    timeApproximate = true
                 )
             }
             .distinctBy { it.url }

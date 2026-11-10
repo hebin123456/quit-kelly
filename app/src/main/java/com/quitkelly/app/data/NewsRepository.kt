@@ -84,14 +84,16 @@ class NewsRepository(
             .filter { it.title.isNotBlank() && it.url.startsWith("http") }
             .distinctBy { fingerprint(it.title) }
             .map { item ->
+                val publishedAt = item.publishedAt.coerceAtMost(now)
                 NewsItemEntity(
                     title = item.title.take(200),
                     summary = item.summary.take(800),
                     url = item.url,
                     source = item.source,
-                    publishedAt = item.publishedAt,
+                    publishedAt = publishedAt,
                     fetchedAt = now,
-                    fingerprint = fingerprint(item.title)
+                    fingerprint = fingerprint(item.title),
+                    timeApproximate = item.timeApproximate
                 )
             }
             .toList()

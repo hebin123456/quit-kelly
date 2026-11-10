@@ -13,7 +13,8 @@ data class RawNews(
     val summary: String,
     val url: String,
     val publishedAt: Long,
-    val source: String
+    val source: String,
+    val timeApproximate: Boolean = false
 )
 
 interface NewsSource {

@@ -9,7 +9,7 @@ import kotlinx.coroutines.flow.Flow
 @Dao
 interface NewsDao {
 
-    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertAll(items: List<NewsItemEntity>): List<Long>
 
     @Query("SELECT * FROM news ORDER BY publishedAt DESC LIMIT :limit")

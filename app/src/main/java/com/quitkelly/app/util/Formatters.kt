@@ -8,10 +8,16 @@ import java.time.format.DateTimeFormatter
 import java.util.Locale
 
 private val timeFormatter = DateTimeFormatter.ofPattern("MM-dd HH:mm")
+private val dateOnlyFormatter = DateTimeFormatter.ofPattern("MM-dd")
 private val dateFormatter = DateTimeFormatter.ofPattern("M月d日 EEEE", Locale.CHINA)
 
 fun formatTime(timestamp: Long): String =
     Instant.ofEpochMilli(timestamp).atZone(ZoneId.systemDefault()).format(timeFormatter)
+
+fun formatNewsTime(timestamp: Long, approximate: Boolean): String {
+    val zoned = Instant.ofEpochMilli(timestamp).atZone(ZoneId.systemDefault())
+    return if (approximate) zoned.format(dateOnlyFormatter) else zoned.format(timeFormatter)
+}
 
 fun formatDateLabel(date: String): String = runCatching {
     LocalDate.parse(date).format(dateFormatter)

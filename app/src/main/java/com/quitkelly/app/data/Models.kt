@@ -20,7 +20,8 @@ data class NewsItemEntity(
     val source: String,
     val publishedAt: Long,
     val fetchedAt: Long,
-    val fingerprint: String
+    val fingerprint: String,
+    @ColumnInfo(defaultValue = "0") val timeApproximate: Boolean = false
 )
 
 @Entity(tableName = "digests")
