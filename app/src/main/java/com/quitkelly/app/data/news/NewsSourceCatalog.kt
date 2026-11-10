@@ -18,7 +18,11 @@ object NewsSourceCatalog {
         NewsSourceInfo("tmtpost", "钛媒体", "商业与科技"),
         NewsSourceInfo("yicai", "第一财经", "财经新闻与深度"),
         NewsSourceInfo("21jingji", "21世纪经济报道", "财经深度报道"),
-        NewsSourceInfo("netease", "网易财经", "财经要闻")
+        NewsSourceInfo("netease", "网易财经", "财经要闻"),
+        NewsSourceInfo("cls", "财联社", "7×24 电报"),
+        NewsSourceInfo("jiemian", "界面新闻", "财经与商业"),
+        NewsSourceInfo("thepaper", "澎湃财经", "财经深度"),
+        NewsSourceInfo("caixin", "财新网", "财经深度")
     )
 
     val defaultIds: Set<String> = all.map { it.id }.toSet()
@@ -30,6 +34,10 @@ object NewsSourceCatalog {
         "tmtpost",
         "yicai",
         "21jingji",
-        "netease"
+        "netease",
+        "cls",
+        "jiemian",
+        "thepaper",
+        "caixin"
     )
 }

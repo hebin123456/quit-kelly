@@ -1,12 +1,16 @@
 package com.quitkelly.app.data
 
+import com.quitkelly.app.data.news.CaixinSource
+import com.quitkelly.app.data.news.ClsSource
 import com.quitkelly.app.data.news.EastmoneySource
+import com.quitkelly.app.data.news.JiemianSource
 import com.quitkelly.app.data.news.Jin10Source
 import com.quitkelly.app.data.news.NbdSource
 import com.quitkelly.app.data.news.NeteaseSource
 import com.quitkelly.app.data.news.RawNews
 import com.quitkelly.app.data.news.RssNewsSource
 import com.quitkelly.app.data.news.SinaSource
+import com.quitkelly.app.data.news.ThePaperSource
 import com.quitkelly.app.data.news.ThsSource
 import com.quitkelly.app.data.news.TwentyOneSource
 import com.quitkelly.app.data.news.WscnSource
@@ -49,6 +53,10 @@ class NewsRepository(
             if ("yicai" in config.enabledSources) add(YicaiSource(client))
             if ("21jingji" in config.enabledSources) add(TwentyOneSource(client))
             if ("netease" in config.enabledSources) add(NeteaseSource(client))
+            if ("cls" in config.enabledSources) add(ClsSource(client))
+            if ("jiemian" in config.enabledSources) add(JiemianSource(client))
+            if ("thepaper" in config.enabledSources) add(ThePaperSource(client))
+            if ("caixin" in config.enabledSources) add(CaixinSource(client))
             config.customRssUrls.forEachIndexed { index, url ->
                 add(RssNewsSource(client, url, "自定义源 ${index + 1}"))
             }

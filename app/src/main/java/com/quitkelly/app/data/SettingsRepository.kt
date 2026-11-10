@@ -30,7 +30,7 @@ private val KEY_MINUTE = intPreferencesKey("daily_minute")
 private val KEY_SOURCES = stringPreferencesKey("enabled_sources")
 private val KEY_RSS = stringPreferencesKey("custom_rss")
 private val KEY_NOTIFY = booleanPreferencesKey("notifications_enabled")
-private val KEY_SOURCES_MIGRATED = booleanPreferencesKey("sources_migrated_v3")
+private val KEY_SOURCES_MIGRATED = booleanPreferencesKey("sources_migrated_v4")
 
 private val DEFAULT_SOURCES = NewsSourceCatalog.defaultIds.joinToString(",")
 
