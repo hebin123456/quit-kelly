@@ -38,7 +38,21 @@ data class ChatSessionEntity(
     @PrimaryKey val id: String,
     val title: String,
     val createdAt: Long,
-    val updatedAt: Long
+    val updatedAt: Long,
+    @ColumnInfo(defaultValue = "'kelly'") val agentId: String = "kelly"
+)
+
+@Entity(tableName = "agents")
+data class AgentEntity(
+    @PrimaryKey val id: String,
+    val name: String,
+    val emoji: String,
+    val description: String,
+    val systemPrompt: String,
+    val isBuiltIn: Boolean = false,
+    val sortOrder: Int = 0,
+    val createdAt: Long = 0,
+    val updatedAt: Long = 0
 )
 
 @Entity(

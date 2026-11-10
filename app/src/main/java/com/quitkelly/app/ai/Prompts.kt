@@ -1,5 +1,6 @@
 package com.quitkelly.app.ai
 
+import com.quitkelly.app.data.BuiltInAgents
 import com.quitkelly.app.data.NewsItemEntity
 import com.quitkelly.app.util.formatNewsTime
 
@@ -32,13 +33,14 @@ object Prompts {
     }
 
     fun chatSystem(
+        persona: String,
         date: String,
         digestDate: String?,
         digest: String?,
         headlines: String
     ): String {
         return buildString {
-            appendLine("你是“凯小丽”，一位资深财经分析师，擅长宏观、A股、港股与全球市场。")
+            appendLine(persona.trim().ifBlank { BuiltInAgents.DEFAULT_PERSONA })
             appendLine("今天是 $date。")
             appendLine()
             if (!digest.isNullOrBlank()) {

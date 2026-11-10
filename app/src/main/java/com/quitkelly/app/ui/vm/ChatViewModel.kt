@@ -9,7 +9,9 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import com.quitkelly.app.AppContainer
 import com.quitkelly.app.ai.AiMessage
 import com.quitkelly.app.ai.Prompts
+import com.quitkelly.app.data.AgentEntity
 import com.quitkelly.app.data.AttachmentStore
+import com.quitkelly.app.data.BuiltInAgents
 import com.quitkelly.app.data.ChatMessageEntity
 import com.quitkelly.app.data.ChatSessionEntity
 import com.quitkelly.app.data.PendingAttachment
@@ -29,6 +31,8 @@ import kotlinx.coroutines.launch
 data class ChatUiState(
     val messages: List<ChatMessageEntity> = emptyList(),
     val sessions: List<ChatSessionEntity> = emptyList(),
+    val agents: List<AgentEntity> = emptyList(),
+    val currentAgentId: String = BuiltInAgents.DEFAULT_ID,
     val currentSessionId: String? = null,
     val streamingText: String = "",
     val isStreaming: Boolean = false,
@@ -53,10 +57,39 @@ class ChatViewModel(private val container: AppContainer) : ViewModel() {
             }
         }
         viewModelScope.launch {
+            container.database.agentDao().allFlow().collect { agents ->
+                _state.update { it.copy(agents = agents) }
+            }
+        }
+        viewModelScope.launch {
+            val agentDao = container.database.agentDao()
+            BuiltInAgents.ensure(agentDao)
+            val savedId = container.settings.snapshot().currentAgentId
+            val savedAgentId = if (agentDao.byId(savedId) != null) {
+                savedId
+            } else {
+                BuiltInAgents.DEFAULT_ID
+            }
             val latest = container.database.chatSessionDao().latest()
-            val id = latest?.id ?: createSessionInternal()
+            val latestAgentRaw = latest?.agentId
+            val latestAgentId = if (latestAgentRaw != null && agentDao.byId(latestAgentRaw) != null) {
+                latestAgentRaw
+            } else {
+                savedAgentId
+            }
+            if (latest != null && latest.agentId != latestAgentId) {
+                container.database.chatSessionDao().upsert(
+                    latest.copy(agentId = latestAgentId)
+                )
+            }
+            val id = latest?.id ?: createSessionInternal(latestAgentId)
             currentSessionId.value = id
-            _state.update { it.copy(currentSessionId = id) }
+            _state.update {
+                it.copy(
+                    currentSessionId = id,
+                    currentAgentId = latestAgentId
+                )
+            }
         }
         viewModelScope.launch {
             currentSessionId
@@ -78,7 +111,7 @@ class ChatViewModel(private val container: AppContainer) : ViewModel() {
     fun newSession() {
         if (_state.value.isStreaming) return
         viewModelScope.launch {
-            val id = createSessionInternal()
+            val id = createSessionInternal(_state.value.currentAgentId)
             currentSessionId.value = id
             _state.update {
                 it.copy(
@@ -93,14 +126,87 @@ class ChatViewModel(private val container: AppContainer) : ViewModel() {
 
     fun selectSession(id: String) {
         if (_state.value.isStreaming || id == _state.value.currentSessionId) return
+        val agentId = _state.value.sessions.firstOrNull { it.id == id }?.agentId
+            ?: _state.value.currentAgentId
         currentSessionId.value = id
         _state.update {
             it.copy(
                 currentSessionId = id,
+                currentAgentId = agentId,
                 messages = emptyList(),
                 pendingAttachments = emptyList(),
                 error = null
             )
+        }
+    }
+
+    fun selectAgent(agentId: String) {
+        if (_state.value.isStreaming) return
+        if (_state.value.agents.none { it.id == agentId }) return
+        viewModelScope.launch {
+            applyAgentToCurrentSession(agentId)
+            container.settings.setCurrentAgentId(agentId)
+            _state.update { it.copy(currentAgentId = agentId, error = null) }
+        }
+    }
+
+    fun saveAgent(
+        id: String?,
+        emoji: String,
+        name: String,
+        description: String,
+        systemPrompt: String
+    ) {
+        val trimmedName = name.trim().take(20)
+        val trimmedPrompt = systemPrompt.trim().take(2000)
+        if (trimmedName.isBlank() || trimmedPrompt.isBlank()) return
+        val trimmedEmoji = emoji.trim().take(4).ifBlank { "🤖" }
+        val trimmedDescription = description.trim().take(60)
+        viewModelScope.launch {
+            val dao = container.database.agentDao()
+            val existing = id?.let { dao.byId(it) }
+            if (existing?.isBuiltIn == true) return@launch
+            val now = System.currentTimeMillis()
+            val agent = if (existing != null) {
+                existing.copy(
+                    emoji = trimmedEmoji,
+                    name = trimmedName,
+                    description = trimmedDescription,
+                    systemPrompt = trimmedPrompt,
+                    updatedAt = now
+                )
+            } else {
+                AgentEntity(
+                    id = UUID.randomUUID().toString(),
+                    name = trimmedName,
+                    emoji = trimmedEmoji,
+                    description = trimmedDescription,
+                    systemPrompt = trimmedPrompt,
+                    isBuiltIn = false,
+                    sortOrder = 100,
+                    createdAt = now,
+                    updatedAt = now
+                )
+            }
+            dao.upsert(agent)
+            if (existing == null) {
+                applyAgentToCurrentSession(agent.id)
+                container.settings.setCurrentAgentId(agent.id)
+                _state.update { it.copy(currentAgentId = agent.id, error = null) }
+            }
+        }
+    }
+
+    fun deleteAgent(agent: AgentEntity) {
+        if (agent.isBuiltIn) return
+        viewModelScope.launch {
+            container.database.agentDao().deleteCustom(agent.id)
+            container.database.chatSessionDao()
+                .reassignAgent(agent.id, BuiltInAgents.DEFAULT_ID)
+            if (_state.value.currentAgentId == agent.id) {
+                container.settings.setCurrentAgentId(BuiltInAgents.DEFAULT_ID)
+                _state.update { it.copy(currentAgentId = BuiltInAgents.DEFAULT_ID) }
+            }
         }
     }
 
@@ -122,12 +228,15 @@ class ChatViewModel(private val container: AppContainer) : ViewModel() {
             container.database.chatDao().clearSession(id)
             container.database.chatSessionDao().delete(id)
             if (wasCurrent) {
-                val nextId = container.database.chatSessionDao().latest()?.id
-                    ?: createSessionInternal()
+                val next = container.database.chatSessionDao().latest()
+                val nextId = next?.id
+                    ?: createSessionInternal(_state.value.currentAgentId)
+                val nextAgentId = next?.agentId ?: _state.value.currentAgentId
                 currentSessionId.value = nextId
                 _state.update {
                     it.copy(
                         currentSessionId = nextId,
+                        currentAgentId = nextAgentId,
                         messages = emptyList(),
                         pendingAttachments = emptyList()
                     )
@@ -258,11 +367,18 @@ class ChatViewModel(private val container: AppContainer) : ViewModel() {
                     if (isEmpty()) append("请分析我发送的附件。")
                 }
 
+                val session = container.database.chatSessionDao().byId(sessionId)
+                val agentId = session?.agentId ?: _state.value.currentAgentId
+                val agent = container.database.agentDao().byId(agentId)
+                    ?: container.database.agentDao().byId(BuiltInAgents.DEFAULT_ID)
+                val persona = agent?.systemPrompt ?: BuiltInAgents.DEFAULT_PERSONA
+
                 val messages = buildList {
                     add(
                         AiMessage(
                             "system",
                             Prompts.chatSystem(
+                                persona = persona,
                                 date = today.toString(),
                                 digestDate = digest?.date,
                                 digest = digest?.content,
@@ -341,7 +457,22 @@ class ChatViewModel(private val container: AppContainer) : ViewModel() {
         _state.update { it.copy(error = null) }
     }
 
-    private suspend fun createSessionInternal(): String {
+    private suspend fun applyAgentToCurrentSession(agentId: String) {
+        val sessionId = _state.value.currentSessionId ?: return
+        val dao = container.database.chatSessionDao()
+        dao.byId(sessionId)?.let { session ->
+            dao.upsert(
+                session.copy(
+                    agentId = agentId,
+                    updatedAt = System.currentTimeMillis()
+                )
+            )
+        }
+    }
+
+    private suspend fun createSessionInternal(
+        agentId: String = BuiltInAgents.DEFAULT_ID
+    ): String {
         val id = UUID.randomUUID().toString()
         val now = System.currentTimeMillis()
         container.database.chatSessionDao().upsert(
@@ -349,7 +480,8 @@ class ChatViewModel(private val container: AppContainer) : ViewModel() {
                 id = id,
                 title = DEFAULT_TITLE,
                 createdAt = now,
-                updatedAt = now
+                updatedAt = now,
+                agentId = agentId
             )
         )
         return id

@@ -61,6 +61,25 @@ interface ChatSessionDao {
 
     @Query("DELETE FROM chat_sessions WHERE id = :id")
     suspend fun delete(id: String)
+
+    @Query("UPDATE chat_sessions SET agentId = :agentId WHERE agentId = :oldAgentId")
+    suspend fun reassignAgent(oldAgentId: String, agentId: String)
+}
+
+@Dao
+interface AgentDao {
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(agent: AgentEntity)
+
+    @Query("SELECT * FROM agents ORDER BY isBuiltIn DESC, sortOrder ASC, createdAt ASC")
+    fun allFlow(): Flow<List<AgentEntity>>
+
+    @Query("SELECT * FROM agents WHERE id = :id")
+    suspend fun byId(id: String): AgentEntity?
+
+    @Query("DELETE FROM agents WHERE id = :id AND isBuiltIn = 0")
+    suspend fun deleteCustom(id: String)
 }
 
 @Dao

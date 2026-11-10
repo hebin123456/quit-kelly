@@ -20,7 +20,8 @@ data class AppSettings(
     val dailyMinute: Int = 30,
     val enabledSources: Set<String> = NewsSourceCatalog.defaultIds,
     val customRssUrls: List<String> = emptyList(),
-    val notificationsEnabled: Boolean = true
+    val notificationsEnabled: Boolean = true,
+    val currentAgentId: String = BuiltInAgents.DEFAULT_ID
 )
 
 private val Context.kellyDataStore by preferencesDataStore(name = "kelly_settings")
@@ -30,6 +31,7 @@ private val KEY_MINUTE = intPreferencesKey("daily_minute")
 private val KEY_SOURCES = stringPreferencesKey("enabled_sources")
 private val KEY_RSS = stringPreferencesKey("custom_rss")
 private val KEY_NOTIFY = booleanPreferencesKey("notifications_enabled")
+private val KEY_CURRENT_AGENT = stringPreferencesKey("current_agent_id")
 private val KEY_SOURCES_MIGRATED = booleanPreferencesKey("sources_migrated_v4")
 
 private val DEFAULT_SOURCES = NewsSourceCatalog.defaultIds.joinToString(",")
@@ -53,7 +55,8 @@ class SettingsRepository(context: Context) {
                     .filter { it.isNotEmpty() }
                     .toSet(),
                 customRssUrls = parseRssUrls(prefs[KEY_RSS] ?: ""),
-                notificationsEnabled = prefs[KEY_NOTIFY] ?: true
+                notificationsEnabled = prefs[KEY_NOTIFY] ?: true,
+                currentAgentId = prefs[KEY_CURRENT_AGENT] ?: BuiltInAgents.DEFAULT_ID
             )
         }
 
@@ -93,6 +96,10 @@ class SettingsRepository(context: Context) {
 
     suspend fun setNotifications(enabled: Boolean) {
         dataStore.edit { it[KEY_NOTIFY] = enabled }
+    }
+
+    suspend fun setCurrentAgentId(agentId: String) {
+        dataStore.edit { it[KEY_CURRENT_AGENT] = agentId }
     }
 
     private fun parseRssUrls(raw: String): List<String> {

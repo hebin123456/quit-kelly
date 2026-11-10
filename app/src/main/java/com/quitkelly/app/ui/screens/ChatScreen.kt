@@ -35,6 +35,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.List
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
@@ -72,15 +73,20 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.quitkelly.app.KellyApp
 import com.quitkelly.app.R
+import com.quitkelly.app.data.AgentEntity
 import com.quitkelly.app.data.ChatAttachment
 import com.quitkelly.app.data.ChatMessageEntity
 import com.quitkelly.app.data.ChatSessionEntity
 import com.quitkelly.app.data.PendingAttachment
+import com.quitkelly.app.ui.components.AgentEditorDialog
+import com.quitkelly.app.ui.components.AgentPickerSheet
+import com.quitkelly.app.ui.components.DeleteAgentDialog
 import com.quitkelly.app.ui.components.KellyAvatar
 import com.quitkelly.app.ui.components.KellyTopBar
 import com.quitkelly.app.ui.components.MarkdownText
@@ -115,7 +121,12 @@ fun ChatScreen(onOpenSettings: () -> Unit) {
     var showSessions by remember { mutableStateOf(false) }
     var renameTarget by remember { mutableStateOf<ChatSessionEntity?>(null) }
     var renameInput by remember { mutableStateOf("") }
+    var showAgents by remember { mutableStateOf(false) }
+    var showAgentEditor by remember { mutableStateOf(false) }
+    var editingAgent by remember { mutableStateOf<AgentEntity?>(null) }
+    var deleteAgentTarget by remember { mutableStateOf<AgentEntity?>(null) }
     val currentTitle = state.sessions.firstOrNull { it.id == state.currentSessionId }?.title
+    val currentAgent = state.agents.firstOrNull { it.id == state.currentAgentId }
 
     LifecycleResumeEffect(Unit) {
         viewModel.refreshKeyState()
@@ -135,8 +146,10 @@ fun ChatScreen(onOpenSettings: () -> Unit) {
 
     Column(modifier = Modifier.fillMaxSize()) {
         KellyTopBar(
-            title = "凯小丽",
-            subtitle = currentTitle ?: "财经专家智能体 · 支持图片与文件",
+            title = currentAgent?.name ?: "凯小丽",
+            subtitle = currentAgent?.description?.ifBlank { "自定义智能体" }
+                ?: currentTitle
+                ?: "财经专家智能体 · 支持图片与文件",
             actions = {
                 if (speechState.speaking) {
                     IconButton(onClick = { app.container.speechPlayer.stop() }) {
@@ -146,6 +159,12 @@ fun ChatScreen(onOpenSettings: () -> Unit) {
                             modifier = Modifier.size(18.dp)
                         )
                     }
+                }
+                IconButton(
+                    onClick = { showAgents = true },
+                    enabled = !state.isStreaming
+                ) {
+                    Icon(Icons.Filled.Person, contentDescription = "切换智能体")
                 }
                 IconButton(
                     onClick = { showSessions = true },
@@ -183,7 +202,7 @@ fun ChatScreen(onOpenSettings: () -> Unit) {
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             if (state.messages.isEmpty() && !state.isStreaming) {
-                item { WelcomeCard() }
+                item { WelcomeCard(currentAgent) }
             }
             items(state.messages, key = { it.id }) { message ->
                 val attachments = remember(message.attachmentsJson) {
@@ -205,7 +224,7 @@ fun ChatScreen(onOpenSettings: () -> Unit) {
                 )
             }
             if (state.isStreaming) {
-                item { StreamingRow(state.streamingText) }
+                item { StreamingRow(state.streamingText, currentAgent?.name ?: "凯小丽") }
             }
         }
 
@@ -247,7 +266,62 @@ fun ChatScreen(onOpenSettings: () -> Unit) {
                 )
             },
             onPickFile = { filePicker.launch(arrayOf("*/*")) },
-            onRemoveAttachment = viewModel::removeAttachment
+            onRemoveAttachment = viewModel::removeAttachment,
+            agentName = currentAgent?.name ?: "凯小丽"
+        )
+    }
+
+    if (showAgents) {
+        AgentPickerSheet(
+            agents = state.agents,
+            currentAgentId = state.currentAgentId,
+            onSelect = { agentId ->
+                viewModel.selectAgent(agentId)
+                showAgents = false
+            },
+            onCreate = {
+                showAgents = false
+                editingAgent = null
+                showAgentEditor = true
+            },
+            onEdit = { agent ->
+                showAgents = false
+                editingAgent = agent
+                showAgentEditor = true
+            },
+            onDelete = { agent ->
+                showAgents = false
+                deleteAgentTarget = agent
+            },
+            onDismiss = { showAgents = false }
+        )
+    }
+
+    if (showAgentEditor) {
+        AgentEditorDialog(
+            agent = editingAgent,
+            onSave = { emoji, name, description, prompt ->
+                viewModel.saveAgent(
+                    id = editingAgent?.id,
+                    emoji = emoji,
+                    name = name,
+                    description = description,
+                    systemPrompt = prompt
+                )
+                showAgentEditor = false
+            },
+            onDismiss = { showAgentEditor = false }
+        )
+    }
+
+    deleteAgentTarget?.let { agent ->
+        DeleteAgentDialog(
+            agent = agent,
+            onConfirm = {
+                viewModel.deleteAgent(agent)
+                deleteAgentTarget = null
+            },
+            onDismiss = { deleteAgentTarget = null }
         )
     }
 
@@ -394,7 +468,7 @@ private fun SessionSheet(
 }
 
 @Composable
-private fun WelcomeCard() {
+private fun WelcomeCard(agent: AgentEntity?) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(20.dp),
@@ -402,16 +476,30 @@ private fun WelcomeCard() {
     ) {
         Column(Modifier.padding(18.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                KellyAvatar(42.dp)
+                Box(
+                    modifier = Modifier
+                        .size(42.dp)
+                        .background(
+                            color = MaterialTheme.colorScheme.primaryContainer,
+                            shape = CircleShape
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = agent?.emoji ?: "📈",
+                        fontSize = 21.sp
+                    )
+                }
                 Spacer(Modifier.width(10.dp))
                 Column {
                     Text(
-                        text = "你好，我是凯小丽",
+                        text = "你好，我是${agent?.name ?: "凯小丽"}",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold
                     )
                     Text(
-                        text = "你的个人财经分析师",
+                        text = agent?.description?.ifBlank { "你的个人财经分析师" }
+                            ?: "你的个人财经分析师",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -618,7 +706,7 @@ private fun AttachmentItem(attachment: ChatAttachment, isUser: Boolean) {
 }
 
 @Composable
-private fun StreamingRow(text: String) {
+private fun StreamingRow(text: String, agentName: String) {
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.Start
@@ -640,7 +728,7 @@ private fun StreamingRow(text: String) {
                         )
                         Spacer(Modifier.width(8.dp))
                         Text(
-                            text = "凯小丽正在思考…",
+                            text = "$agentName 正在思考…",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -771,7 +859,8 @@ private fun ChatInput(
     onSend: () -> Unit,
     onPickImage: () -> Unit,
     onPickFile: () -> Unit,
-    onRemoveAttachment: (String) -> Unit
+    onRemoveAttachment: (String) -> Unit,
+    agentName: String
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
 
@@ -833,7 +922,7 @@ private fun ChatInput(
                     value = value,
                     onValueChange = onChange,
                     modifier = Modifier.weight(1f),
-                    placeholder = { Text("问问凯小丽，或添加图片/文件…") },
+                    placeholder = { Text("问问$agentName，或添加图片/文件…") },
                     maxLines = 4,
                     shape = RoundedCornerShape(22.dp),
                     enabled = enabled
