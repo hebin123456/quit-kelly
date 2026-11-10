@@ -194,9 +194,14 @@ fun ChatScreen(onOpenSettings: () -> Unit) {
                     attachments = attachments,
                     isSpeaking = speechState.speaking &&
                         speechState.activeKey == "chat:${message.id}",
-                    onToggleSpeech = {
+                    isPaused = speechState.paused &&
+                        speechState.activeKey == "chat:${message.id}",
+                    onStart = {
                         app.container.speechPlayer.toggle("chat:${message.id}", message.content)
-                    }
+                    },
+                    onPause = { app.container.speechPlayer.pause() },
+                    onResume = { app.container.speechPlayer.resume() },
+                    onStop = { app.container.speechPlayer.stop() }
                 )
             }
             if (state.isStreaming) {
@@ -427,7 +432,11 @@ private fun MessageRow(
     message: ChatMessageEntity,
     attachments: List<ChatAttachment>,
     isSpeaking: Boolean,
-    onToggleSpeech: () -> Unit
+    isPaused: Boolean,
+    onStart: () -> Unit,
+    onPause: () -> Unit,
+    onResume: () -> Unit,
+    onStop: () -> Unit
 ) {
     val isUser = message.role == "user"
     Row(
@@ -487,28 +496,61 @@ private fun MessageRow(
                             .padding(end = 8.dp, bottom = 6.dp),
                         horizontalArrangement = Arrangement.End
                     ) {
-                        TextButton(
-                            onClick = onToggleSpeech,
-                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
-                        ) {
-                            if (isSpeaking) {
-                                Icon(
-                                    painter = painterResource(R.drawable.ic_speech_stop),
-                                    contentDescription = null,
-                                    modifier = Modifier.size(14.dp)
-                                )
-                            } else {
+                        if (!isSpeaking) {
+                            TextButton(
+                                onClick = onStart,
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
+                            ) {
                                 Icon(
                                     imageVector = Icons.Filled.PlayArrow,
                                     contentDescription = null,
                                     modifier = Modifier.size(16.dp)
                                 )
+                                Spacer(Modifier.width(4.dp))
+                                Text(
+                                    text = "朗读",
+                                    style = MaterialTheme.typography.labelSmall
+                                )
                             }
-                            Spacer(Modifier.width(4.dp))
-                            Text(
-                                text = if (isSpeaking) "停止" else "朗读",
-                                style = MaterialTheme.typography.labelSmall
-                            )
+                        } else {
+                            TextButton(
+                                onClick = if (isPaused) onResume else onPause,
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
+                            ) {
+                                if (isPaused) {
+                                    Icon(
+                                        imageVector = Icons.Filled.PlayArrow,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                } else {
+                                    Icon(
+                                        painter = painterResource(R.drawable.ic_speech_pause),
+                                        contentDescription = null,
+                                        modifier = Modifier.size(14.dp)
+                                    )
+                                }
+                                Spacer(Modifier.width(4.dp))
+                                Text(
+                                    text = if (isPaused) "继续" else "暂停",
+                                    style = MaterialTheme.typography.labelSmall
+                                )
+                            }
+                            TextButton(
+                                onClick = onStop,
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
+                            ) {
+                                Icon(
+                                    painter = painterResource(R.drawable.ic_speech_stop),
+                                    contentDescription = null,
+                                    modifier = Modifier.size(14.dp)
+                                )
+                                Spacer(Modifier.width(4.dp))
+                                Text(
+                                    text = "停止",
+                                    style = MaterialTheme.typography.labelSmall
+                                )
+                            }
                         }
                     }
                 }

@@ -12,6 +12,7 @@ import kotlinx.coroutines.flow.asStateFlow
 data class SpeechState(
     val ready: Boolean = false,
     val speaking: Boolean = false,
+    val paused: Boolean = false,
     val activeKey: String? = null,
     val error: String? = null
 )
@@ -23,8 +24,8 @@ class SpeechPlayer(context: Context) : TextToSpeech.OnInitListener {
 
     private var pending: Pair<String, String>? = null
     private var generation = 0
-    private var activeChunks = 0
-    private var completedChunks = 0
+    private var chunks: List<String> = emptyList()
+    private var chunkIndex = 0
 
     private val tts: TextToSpeech? = TextToSpeech(context.applicationContext, this)
 
@@ -57,18 +58,21 @@ class SpeechPlayer(context: Context) : TextToSpeech.OnInitListener {
             override fun onStart(utteranceId: String?) = Unit
 
             override fun onDone(utteranceId: String?) {
-                val chunkGeneration = generationOf(utteranceId) ?: return
-                if (chunkGeneration != generation) return
-                completedChunks++
-                if (completedChunks >= activeChunks) {
+                val parsed = parseUtteranceId(utteranceId) ?: return
+                if (parsed.first != generation) return
+                if (parsed.second != chunkIndex) return
+                chunkIndex++
+                if (chunkIndex >= chunks.size) {
                     finish()
+                } else {
+                    speakCurrentChunk(generation)
                 }
             }
 
             @Deprecated("Deprecated in Java")
             override fun onError(utteranceId: String?) {
-                val chunkGeneration = generationOf(utteranceId) ?: return
-                if (chunkGeneration != generation) return
+                val parsed = parseUtteranceId(utteranceId) ?: return
+                if (parsed.first != generation) return
                 generation++
                 finish("朗读失败，请检查语音引擎")
             }
@@ -82,11 +86,28 @@ class SpeechPlayer(context: Context) : TextToSpeech.OnInitListener {
     }
 
     fun toggle(key: String, text: String) {
-        if (_state.value.speaking && _state.value.activeKey == key) {
+        val current = _state.value
+        if (current.speaking && current.activeKey == key) {
             stop()
         } else {
             speak(key, text)
         }
+    }
+
+    fun pause() {
+        val current = _state.value
+        if (!current.speaking || current.paused) return
+        generation++
+        tts?.stop()
+        _state.value = current.copy(paused = true)
+    }
+
+    fun resume() {
+        val current = _state.value
+        if (!current.speaking || !current.paused) return
+        generation++
+        _state.value = current.copy(paused = false)
+        speakCurrentChunk(generation)
     }
 
     fun stop() {
@@ -111,54 +132,71 @@ class SpeechPlayer(context: Context) : TextToSpeech.OnInitListener {
             _state.value = _state.value.copy(error = null)
         }
 
-        val chunks = chunk(cleanForSpeech(text))
-        if (chunks.isEmpty()) {
+        val newChunks = chunk(cleanForSpeech(text))
+        if (newChunks.isEmpty()) {
             _state.value = _state.value.copy(error = "没有可朗读的内容")
             return
         }
 
+        tts?.stop()
+        generation++
+        val currentGeneration = generation
+        chunks = newChunks
+        chunkIndex = 0
+        _state.value = SpeechState(
+            ready = true,
+            speaking = true,
+            paused = false,
+            activeKey = key
+        )
+        speakCurrentChunk(currentGeneration)
+    }
+
+    private fun speakCurrentChunk(currentGeneration: Int) {
+        if (currentGeneration != generation) return
         val engine = tts ?: run {
-            _state.value = _state.value.copy(error = "语音引擎不可用")
+            generation++
+            finish("语音引擎不可用")
+            return
+        }
+        if (chunkIndex >= chunks.size) {
+            finish()
             return
         }
 
-        engine.stop()
-        generation++
-        val currentGeneration = generation
-        activeChunks = chunks.size
-        completedChunks = 0
-        _state.value = SpeechState(ready = true, speaking = true, activeKey = key)
-
-        chunks.forEachIndexed { index, chunk ->
-            val utteranceId = "kelly_${currentGeneration}_$index"
-            val params = Bundle().apply {
-                putString(TextToSpeech.Engine.KEY_PARAM_UTTERANCE_ID, utteranceId)
-            }
-            val result = engine.speak(
-                chunk,
-                if (index == 0) TextToSpeech.QUEUE_FLUSH else TextToSpeech.QUEUE_ADD,
-                params,
-                utteranceId
-            )
-            if (result == TextToSpeech.ERROR) {
-                generation++
-                finish("朗读启动失败")
-                return
-            }
+        val utteranceId = "kelly_${currentGeneration}_$chunkIndex"
+        val params = Bundle().apply {
+            putString(TextToSpeech.Engine.KEY_PARAM_UTTERANCE_ID, utteranceId)
+        }
+        val result = engine.speak(
+            chunks[chunkIndex],
+            TextToSpeech.QUEUE_FLUSH,
+            params,
+            utteranceId
+        )
+        if (result == TextToSpeech.ERROR) {
+            generation++
+            finish("朗读启动失败")
         }
     }
 
     private fun finish(error: String? = null) {
+        chunks = emptyList()
+        chunkIndex = 0
         _state.value = SpeechState(
             ready = _state.value.ready,
             speaking = false,
+            paused = false,
             activeKey = null,
             error = error
         )
     }
 
-    private fun generationOf(utteranceId: String?): Int? {
-        return utteranceId?.split('_')?.getOrNull(1)?.toIntOrNull()
+    private fun parseUtteranceId(utteranceId: String?): Pair<Int, Int>? {
+        val parts = utteranceId?.split('_') ?: return null
+        val gen = parts.getOrNull(1)?.toIntOrNull() ?: return null
+        val index = parts.getOrNull(2)?.toIntOrNull() ?: return null
+        return gen to index
     }
 
     private fun cleanForSpeech(text: String): String {
@@ -173,7 +211,7 @@ class SpeechPlayer(context: Context) : TextToSpeech.OnInitListener {
             .trim()
     }
 
-    private fun chunk(text: String, maxLength: Int = 2800): List<String> {
+    private fun chunk(text: String, maxLength: Int = 150): List<String> {
         if (text.length <= maxLength) {
             return listOf(text).filter { it.isNotBlank() }
         }
@@ -188,7 +226,7 @@ class SpeechPlayer(context: Context) : TextToSpeech.OnInitListener {
                     charArrayOf('。', '！', '？', '；', '，', '\n'),
                     searchEnd
                 )
-                if (lastBreak > start + maxLength / 2) {
+                if (lastBreak > start + maxLength / 3) {
                     split = lastBreak + 1
                 }
             }
