@@ -3,8 +3,6 @@ package com.quitkelly.app.ui.screens
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
-import android.content.Intent
-import android.net.Uri
 import android.widget.Toast
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -70,6 +68,7 @@ import com.quitkelly.app.R
 import com.quitkelly.app.data.DigestEntity
 import com.quitkelly.app.data.NewsItemEntity
 import com.quitkelly.app.ui.components.GoldDot
+import com.quitkelly.app.ui.components.InAppBrowserDialog
 import com.quitkelly.app.ui.components.KellyAvatar
 import com.quitkelly.app.ui.components.KellyTopBar
 import com.quitkelly.app.ui.components.MarkdownText
@@ -90,6 +89,7 @@ fun DailyScreen(onOpenSettings: () -> Unit) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val speechState by app.container.speechPlayer.state.collectAsStateWithLifecycle()
     var selectedNews by remember { mutableStateOf<NewsItemEntity?>(null) }
+    var browserUrl by remember { mutableStateOf<String?>(null) }
 
     LifecycleResumeEffect(Unit) {
         viewModel.onScreenResume()
@@ -229,13 +229,24 @@ fun DailyScreen(onOpenSettings: () -> Unit) {
     val news = selectedNews
     if (news != null) {
         ModalBottomSheet(onDismissRequest = { selectedNews = null }) {
-            NewsDetailSheet(news)
+            NewsDetailSheet(
+                item = news,
+                onOpenArticle = { browserUrl = it }
+            )
         }
+    }
+
+    val browser = browserUrl
+    if (browser != null) {
+        InAppBrowserDialog(
+            url = browser,
+            onDismiss = { browserUrl = null }
+        )
     }
 }
 
 @Composable
-private fun NewsDetailSheet(item: NewsItemEntity) {
+private fun NewsDetailSheet(item: NewsItemEntity, onOpenArticle: (String) -> Unit) {
     val context = LocalContext.current
     Column(
         modifier = Modifier
@@ -280,8 +291,8 @@ private fun NewsDetailSheet(item: NewsItemEntity) {
         )
         Spacer(Modifier.height(20.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            Button(onClick = { openUrl(context, item.url) }) {
-                Text("打开原文")
+            Button(onClick = { onOpenArticle(item.url) }) {
+                Text("阅读原文")
             }
             OutlinedButton(onClick = { copyNewsLink(context, item.url) }) {
                 Text("复制链接")
@@ -597,8 +608,4 @@ private fun NewsCard(item: NewsItemEntity, onClick: () -> Unit) {
     }
 }
 
-private fun openUrl(context: Context, url: String) {
-    runCatching {
-        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
-    }
-}
+
