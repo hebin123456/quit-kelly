@@ -276,6 +276,7 @@ fun ChatScreen(onOpenSettings: () -> Unit) {
             agents = state.agents,
             currentAgentId = state.currentAgentId,
             onSelect = { agentId ->
+                app.container.speechPlayer.stop()
                 viewModel.selectAgent(agentId)
                 showAgents = false
             },
@@ -328,8 +329,9 @@ fun ChatScreen(onOpenSettings: () -> Unit) {
     if (showSessions) {
         ModalBottomSheet(onDismissRequest = { showSessions = false }) {
             SessionSheet(
-                sessions = state.sessions,
+                sessions = state.sessions.filter { it.agentId == state.currentAgentId },
                 currentSessionId = state.currentSessionId,
+                agentName = currentAgent?.name ?: "凯小丽",
                 onSelect = { id ->
                     viewModel.selectSession(id)
                     showSessions = false
@@ -386,6 +388,7 @@ fun ChatScreen(onOpenSettings: () -> Unit) {
 private fun SessionSheet(
     sessions: List<ChatSessionEntity>,
     currentSessionId: String?,
+    agentName: String,
     onSelect: (String) -> Unit,
     onRename: (ChatSessionEntity) -> Unit,
     onDelete: (String) -> Unit,
@@ -399,7 +402,7 @@ private fun SessionSheet(
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
-                text = "对话记录",
+                text = "$agentName 的对话",
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
                 modifier = Modifier.weight(1f)

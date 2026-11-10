@@ -70,24 +70,13 @@ class ChatViewModel(private val container: AppContainer) : ViewModel() {
             } else {
                 BuiltInAgents.DEFAULT_ID
             }
-            val latest = container.database.chatSessionDao().latest()
-            val latestAgentRaw = latest?.agentId
-            val latestAgentId = if (latestAgentRaw != null && agentDao.byId(latestAgentRaw) != null) {
-                latestAgentRaw
-            } else {
-                savedAgentId
-            }
-            if (latest != null && latest.agentId != latestAgentId) {
-                container.database.chatSessionDao().upsert(
-                    latest.copy(agentId = latestAgentId)
-                )
-            }
-            val id = latest?.id ?: createSessionInternal(latestAgentId)
+            val latest = container.database.chatSessionDao().latestForAgent(savedAgentId)
+            val id = latest?.id ?: createSessionInternal(savedAgentId)
             currentSessionId.value = id
             _state.update {
                 it.copy(
                     currentSessionId = id,
-                    currentAgentId = latestAgentId
+                    currentAgentId = savedAgentId
                 )
             }
         }
@@ -142,11 +131,10 @@ class ChatViewModel(private val container: AppContainer) : ViewModel() {
 
     fun selectAgent(agentId: String) {
         if (_state.value.isStreaming) return
+        if (agentId == _state.value.currentAgentId) return
         if (_state.value.agents.none { it.id == agentId }) return
         viewModelScope.launch {
-            applyAgentToCurrentSession(agentId)
-            container.settings.setCurrentAgentId(agentId)
-            _state.update { it.copy(currentAgentId = agentId, error = null) }
+            switchAgent(agentId)
         }
     }
 
@@ -190,9 +178,7 @@ class ChatViewModel(private val container: AppContainer) : ViewModel() {
             }
             dao.upsert(agent)
             if (existing == null) {
-                applyAgentToCurrentSession(agent.id)
-                container.settings.setCurrentAgentId(agent.id)
-                _state.update { it.copy(currentAgentId = agent.id, error = null) }
+                switchAgent(agent.id)
             }
         }
     }
@@ -228,15 +214,14 @@ class ChatViewModel(private val container: AppContainer) : ViewModel() {
             container.database.chatDao().clearSession(id)
             container.database.chatSessionDao().delete(id)
             if (wasCurrent) {
-                val next = container.database.chatSessionDao().latest()
+                val next = container.database.chatSessionDao()
+                    .latestForAgent(_state.value.currentAgentId)
                 val nextId = next?.id
                     ?: createSessionInternal(_state.value.currentAgentId)
-                val nextAgentId = next?.agentId ?: _state.value.currentAgentId
                 currentSessionId.value = nextId
                 _state.update {
                     it.copy(
                         currentSessionId = nextId,
-                        currentAgentId = nextAgentId,
                         messages = emptyList(),
                         pendingAttachments = emptyList()
                     )
@@ -457,15 +442,18 @@ class ChatViewModel(private val container: AppContainer) : ViewModel() {
         _state.update { it.copy(error = null) }
     }
 
-    private suspend fun applyAgentToCurrentSession(agentId: String) {
-        val sessionId = _state.value.currentSessionId ?: return
-        val dao = container.database.chatSessionDao()
-        dao.byId(sessionId)?.let { session ->
-            dao.upsert(
-                session.copy(
-                    agentId = agentId,
-                    updatedAt = System.currentTimeMillis()
-                )
+    private suspend fun switchAgent(agentId: String) {
+        container.settings.setCurrentAgentId(agentId)
+        val latest = container.database.chatSessionDao().latestForAgent(agentId)
+        val id = latest?.id ?: createSessionInternal(agentId)
+        currentSessionId.value = id
+        _state.update {
+            it.copy(
+                currentAgentId = agentId,
+                currentSessionId = id,
+                messages = emptyList(),
+                pendingAttachments = emptyList(),
+                error = null
             )
         }
     }

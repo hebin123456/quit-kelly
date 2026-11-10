@@ -56,6 +56,9 @@ interface ChatSessionDao {
     @Query("SELECT * FROM chat_sessions ORDER BY updatedAt DESC LIMIT 1")
     suspend fun latest(): ChatSessionEntity?
 
+    @Query("SELECT * FROM chat_sessions WHERE agentId = :agentId ORDER BY updatedAt DESC LIMIT 1")
+    suspend fun latestForAgent(agentId: String): ChatSessionEntity?
+
     @Query("SELECT * FROM chat_sessions WHERE id = :id")
     suspend fun byId(id: String): ChatSessionEntity?
 
