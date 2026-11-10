@@ -124,22 +124,22 @@ fun InAppBrowserDialog(url: String, onDismiss: () -> Unit) {
                                     favicon: Bitmap?
                                 ) {
                                     loading = true
-                                    canGoBack = view?.canGoBack == true
+                                    canGoBack = view?.canGoBack() == true
                                 }
 
                                 override fun onPageFinished(view: WebView?, url: String?) {
                                     loading = false
-                                    canGoBack = view?.canGoBack == true
-                                }
-
-                                override fun onReceivedTitle(view: WebView?, title: String?) {
-                                    pageTitle = title.orEmpty()
+                                    canGoBack = view?.canGoBack() == true
                                 }
                             }
 
                             webChromeClient = object : WebChromeClient() {
                                 override fun onProgressChanged(view: WebView?, newProgress: Int) {
                                     if (newProgress >= 100) loading = false
+                                }
+
+                                override fun onReceivedTitle(view: WebView?, title: String?) {
+                                    pageTitle = title.orEmpty()
                                 }
                             }
 
