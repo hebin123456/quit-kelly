@@ -8,6 +8,7 @@ import com.quitkelly.app.data.NewsRepository
 import com.quitkelly.app.data.SecretStore
 import com.quitkelly.app.data.SettingsRepository
 import com.quitkelly.app.domain.DigestGenerator
+import com.quitkelly.app.util.SpeechPlayer
 import java.util.concurrent.TimeUnit
 import okhttp3.OkHttpClient
 
@@ -22,6 +23,8 @@ class AppContainer(context: Context) {
     val secretStore = SecretStore(appContext)
 
     val attachmentStore = AttachmentStore(appContext)
+
+    val speechPlayer = SpeechPlayer(appContext)
 
     val httpClient: OkHttpClient = OkHttpClient.Builder()
         .connectTimeout(20, TimeUnit.SECONDS)

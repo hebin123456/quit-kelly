@@ -16,12 +16,14 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -43,6 +45,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -51,6 +54,7 @@ import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.quitkelly.app.KellyApp
+import com.quitkelly.app.R
 import com.quitkelly.app.data.DigestEntity
 import com.quitkelly.app.data.NewsItemEntity
 import com.quitkelly.app.ui.components.GoldDot
@@ -71,6 +75,7 @@ fun DailyScreen(onOpenSettings: () -> Unit) {
     val app = context.applicationContext as? KellyApp ?: return
     val viewModel: DailyViewModel = viewModel(factory = DailyViewModel.factory(app.container))
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val speechState by app.container.speechPlayer.state.collectAsStateWithLifecycle()
 
     LifecycleResumeEffect(Unit) {
         viewModel.onScreenResume()
@@ -115,6 +120,14 @@ fun DailyScreen(onOpenSettings: () -> Unit) {
                     )
                 }
             }
+            speechState.error?.let { error ->
+                item {
+                    MessageBanner(
+                        text = error,
+                        onDismiss = { app.container.speechPlayer.clearError() }
+                    )
+                }
+            }
             if (state.digestDates.size > 1) {
                 item {
                     DateSelector(
@@ -126,7 +139,19 @@ fun DailyScreen(onOpenSettings: () -> Unit) {
             }
             val digest = state.digest
             if (digest != null) {
-                item { DigestCard(digest) }
+                item {
+                    DigestCard(
+                        digest = digest,
+                        isSpeaking = speechState.speaking &&
+                            speechState.activeKey == "digest:${digest.date}",
+                        onToggleSpeech = {
+                            app.container.speechPlayer.toggle(
+                                "digest:${digest.date}",
+                                digest.content
+                            )
+                        }
+                    )
+                }
             } else if (!state.loading) {
                 item {
                     EmptyDigestCard(
@@ -278,7 +303,11 @@ private fun HeroCard(
 }
 
 @Composable
-private fun DigestCard(digest: DigestEntity) {
+private fun DigestCard(
+    digest: DigestEntity,
+    isSpeaking: Boolean,
+    onToggleSpeech: () -> Unit
+) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(20.dp),
@@ -300,6 +329,23 @@ private fun DigestCard(digest: DigestEntity) {
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+                IconButton(
+                    onClick = onToggleSpeech,
+                    enabled = digest.content.isNotBlank()
+                ) {
+                    if (isSpeaking) {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_speech_stop),
+                            contentDescription = "停止朗读",
+                            modifier = Modifier.size(18.dp)
+                        )
+                    } else {
+                        Icon(
+                            imageVector = Icons.Filled.PlayArrow,
+                            contentDescription = "朗读日报"
+                        )
+                    }
+                }
             }
             Spacer(Modifier.height(10.dp))
             MarkdownText(digest.content)

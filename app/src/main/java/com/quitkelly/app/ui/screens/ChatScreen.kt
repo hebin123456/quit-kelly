@@ -35,6 +35,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.List
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Card
@@ -96,6 +97,7 @@ fun ChatScreen(onOpenSettings: () -> Unit) {
     val app = context.applicationContext as? KellyApp ?: return
     val viewModel: ChatViewModel = viewModel(factory = ChatViewModel.factory(app.container))
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val speechState by app.container.speechPlayer.state.collectAsStateWithLifecycle()
 
     val imagePicker = rememberLauncherForActivityResult(
         ActivityResultContracts.PickMultipleVisualMedia(4)
@@ -136,6 +138,15 @@ fun ChatScreen(onOpenSettings: () -> Unit) {
             title = "凯小丽",
             subtitle = currentTitle ?: "财经专家智能体 · 支持图片与文件",
             actions = {
+                if (speechState.speaking) {
+                    IconButton(onClick = { app.container.speechPlayer.stop() }) {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_speech_stop),
+                            contentDescription = "停止朗读",
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                }
                 IconButton(
                     onClick = { showSessions = true },
                     enabled = !state.isStreaming
@@ -178,7 +189,15 @@ fun ChatScreen(onOpenSettings: () -> Unit) {
                 val attachments = remember(message.attachmentsJson) {
                     app.container.attachmentStore.fromJson(message.attachmentsJson)
                 }
-                MessageRow(message = message, attachments = attachments)
+                MessageRow(
+                    message = message,
+                    attachments = attachments,
+                    isSpeaking = speechState.speaking &&
+                        speechState.activeKey == "chat:${message.id}",
+                    onToggleSpeech = {
+                        app.container.speechPlayer.toggle("chat:${message.id}", message.content)
+                    }
+                )
             }
             if (state.isStreaming) {
                 item { StreamingRow(state.streamingText) }
@@ -188,6 +207,15 @@ fun ChatScreen(onOpenSettings: () -> Unit) {
         state.error?.let { error ->
             Box(Modifier.padding(horizontal = 16.dp, vertical = 6.dp)) {
                 MessageBanner(text = error, onDismiss = viewModel::dismissError)
+            }
+        }
+
+        speechState.error?.let { error ->
+            Box(Modifier.padding(horizontal = 16.dp, vertical = 6.dp)) {
+                MessageBanner(
+                    text = error,
+                    onDismiss = { app.container.speechPlayer.clearError() }
+                )
             }
         }
 
@@ -395,7 +423,12 @@ private fun WelcomeCard() {
 }
 
 @Composable
-private fun MessageRow(message: ChatMessageEntity, attachments: List<ChatAttachment>) {
+private fun MessageRow(
+    message: ChatMessageEntity,
+    attachments: List<ChatAttachment>,
+    isSpeaking: Boolean,
+    onToggleSpeech: () -> Unit
+) {
     val isUser = message.role == "user"
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -425,23 +458,57 @@ private fun MessageRow(message: ChatMessageEntity, attachments: List<ChatAttachm
             tonalElevation = if (isUser) 0.dp else 1.dp,
             modifier = Modifier.widthIn(max = 330.dp)
         ) {
-            SelectionContainer {
-                Column(Modifier.padding(12.dp)) {
-                    if (message.content.isNotBlank()) {
-                        if (isUser) {
-                            Text(
-                                text = message.content,
-                                style = MaterialTheme.typography.bodyMedium
-                            )
-                        } else {
-                            MarkdownText(message.content)
+            Column {
+                SelectionContainer {
+                    Column(Modifier.padding(12.dp)) {
+                        if (message.content.isNotBlank()) {
+                            if (isUser) {
+                                Text(
+                                    text = message.content,
+                                    style = MaterialTheme.typography.bodyMedium
+                                )
+                            } else {
+                                MarkdownText(message.content)
+                            }
+                        }
+                        if (attachments.isNotEmpty()) {
+                            if (message.content.isNotBlank()) Spacer(Modifier.height(8.dp))
+                            attachments.forEachIndexed { index, attachment ->
+                                if (index > 0) Spacer(Modifier.height(6.dp))
+                                AttachmentItem(attachment = attachment, isUser = isUser)
+                            }
                         }
                     }
-                    if (attachments.isNotEmpty()) {
-                        if (message.content.isNotBlank()) Spacer(Modifier.height(8.dp))
-                        attachments.forEachIndexed { index, attachment ->
-                            if (index > 0) Spacer(Modifier.height(6.dp))
-                            AttachmentItem(attachment = attachment, isUser = isUser)
+                }
+                if (!isUser && message.content.isNotBlank()) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(end = 8.dp, bottom = 6.dp),
+                        horizontalArrangement = Arrangement.End
+                    ) {
+                        TextButton(
+                            onClick = onToggleSpeech,
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
+                        ) {
+                            if (isSpeaking) {
+                                Icon(
+                                    painter = painterResource(R.drawable.ic_speech_stop),
+                                    contentDescription = null,
+                                    modifier = Modifier.size(14.dp)
+                                )
+                            } else {
+                                Icon(
+                                    imageVector = Icons.Filled.PlayArrow,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                            Spacer(Modifier.width(4.dp))
+                            Text(
+                                text = if (isSpeaking) "停止" else "朗读",
+                                style = MaterialTheme.typography.labelSmall
+                            )
                         }
                     }
                 }
